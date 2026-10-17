@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChargerDash for SkyRC iMAX B6AC v2</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --serious: #ec835a;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  .sub { color: var(--ink-2); font-size: 13px; }
+  .spacer { flex: 1; }
+
+  .charger header { margin-bottom: 12px; }
+  .charger header .log { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (min-width: 761px) { .charger header { flex-wrap: nowrap; } }
+  .rename {
+    font: inherit; font-size: 18px; font-weight: 650; color: var(--ink); background: none;
+    border: 0; padding: 2px 4px; margin-left: -4px; border-radius: 6px; cursor: pointer;
+  }
+  .rename:hover { background: var(--grid); }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); font-weight: 600; font-size: 13px;
+  }
+  .status svg { width: 14px; height: 14px; }
+  .program {
+    padding: 4px 10px; border-radius: 999px; background: var(--grid); color: var(--ink);
+    font-weight: 600; font-size: 13px; white-space: nowrap;
+  }
+  .program .sep { color: var(--muted); margin: 0 5px; font-weight: 400; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .tile .label { color: var(--ink-2); font-size: 12px; }
+  .tile .value { font-size: 28px; font-weight: 650; margin-top: 2px; }
+  .tile .unit { font-size: 15px; color: var(--ink-2); font-weight: 500; margin-left: 2px; }
+  .tile .tile-sub { color: var(--ink-2); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+  h2 { font-size: 14px; margin: 0 0 10px; font-weight: 650; }
+  h2 .sub { font-weight: 400; margin-left: 6px; }
+
+  .cells { display: grid; gap: 8px; }
+  .cell { display: grid; grid-template-columns: 52px 1fr 64px 92px; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+  .cell .name { color: var(--ink-2); }
+  .cell .v { text-align: right; font-weight: 600; }
+  .cell .d { text-align: right; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+  .track { position: relative; height: 18px; }
+  .track::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: var(--grid); border-radius: 1px; }
+  .track .avg { position: absolute; top: 2px; width: 1px; height: 14px; background: var(--axis); }
+  .track .dot {
+    position: absolute; top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+    background: var(--s1); box-shadow: 0 0 0 2px var(--surface); transition: left .4s;
+  }
+  .scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin: 6px 0 0 62px; padding-right: 176px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 480px) { .scale { display: none; } }
+
+  .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: 200px; overflow: visible; }
+  .chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: -2px 0 8px; color: var(--ink-2); font-size: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; display: none; z-index: 2;
+    font-variant-numeric: tabular-nums;
+  }
+  .tip .k { color: var(--ink-2); }
+  .tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+  .empty { color: var(--muted); padding: 50px 0; text-align: center; }
+
+  details summary { cursor: pointer; color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 12px; }
+  th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--ink-2); font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  .banner { margin-bottom: 12px; color: var(--ink-2); }
+
+  .btn {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  }
+  .btn:hover:not(:disabled) { background: var(--grid); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-primary { background: var(--s1); border-color: var(--s1); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--s1); filter: brightness(1.1); }
+  .btn-stop:not(:disabled) { color: var(--critical); }
+  .start-form { margin-bottom: 12px; }
+  .start-form .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; }
+  .start-form .actions { margin-top: 12px; }
+  .start-form label { display: grid; gap: 4px; color: var(--ink-2); font-size: 12px; }
+  .start-form select, .start-form input {
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--page);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  }
+  .start-form input { width: 72px; }
+  .start-form .amps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ink); }
+  .start-form .field { display: grid; gap: 4px; }
+  .start-form .field-label { color: var(--ink-2); font-size: 12px; }
+  .presets { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .preset {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 5px 10px; cursor: pointer;
+    background: var(--page); color: var(--ink-2); border: 0; border-left: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .preset:first-child { border-left: 0; }
+  .preset:hover { background: var(--grid); color: var(--ink); }
+  .preset[aria-pressed="true"] { background: var(--s1); color: #fff; }
+  .start-form .detect { flex: 1 1 260px; color: var(--ink-2); padding-bottom: 6px; }
+  .start-form .detect b { color: var(--ink); }
+  .start-form .detect.bad { color: var(--critical); }
+  /* Help guide */
+  #help {
+    width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  }
+  #help::backdrop { background: rgba(0,0,0,.5); }
+  .help-head {
+    position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .help-head h2 { margin: 0; font-size: 17px; }
+  .help-body { padding: 4px 20px 20px; line-height: 1.5; }
+  .help-body h3 { font-size: 14px; margin: 18px 0 6px; }
+  .help-body p, .help-body li { color: var(--ink-2); font-size: 13.5px; }
+  .help-body p { margin: 0 0 8px; }
+  .help-body ul, .help-body ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+  .help-body b { color: var(--ink); }
+
+  /* Charger tabs */
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+  .tab { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .tab[data-selected="true"] { border-color: var(--s1); box-shadow: inset 0 -2px 0 var(--s1); }
+  .tab-btn {
+    display: grid; grid-template-columns: 14px auto; column-gap: 8px; align-items: center; text-align: left;
+    font: inherit; color: var(--ink); background: none; border: 0; padding: 7px 12px; cursor: pointer; border-radius: 10px;
+  }
+  .tab-btn svg { width: 14px; height: 14px; grid-row: span 2; }
+  .tab-btn b { font-size: 14px; }
+  .tab-btn small { grid-column: 2; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .tab-close {
+    font: inherit; font-size: 16px; line-height: 1; color: var(--ink-2); background: none; border: 0;
+    padding: 0 10px 0 2px; cursor: pointer; border-radius: 0 10px 10px 0;
+  }
+  .tab-close:hover { color: var(--ink); }
+
+  /* All-chargers overview: one compact card per charger, side by side */
+  .overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+  .ov-card { display: grid; gap: 12px; align-content: start; }
+  .ov-card[data-state="off"] { opacity: .7; }
+  .ov-head { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
+  .ov-head svg { width: 16px; height: 16px; }
+  .ov-name {
+    font: inherit; font-size: 16px; font-weight: 650; color: var(--ink); background: none; border: 0;
+    padding: 2px 4px; margin-left: -4px; border-radius: 6px; cursor: pointer;
+  }
+  .ov-name:hover { background: var(--grid); }
+  .ov-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .ov-stat .label, .ov-cells .label { color: var(--ink-2); font-size: 12px; }
+  .ov-stat .value { font-size: 20px; font-weight: 650; white-space: nowrap; }
+  .ov-stat .value .unit { font-size: 12px; color: var(--ink-2); font-weight: 500; margin-left: 2px; }
+  .ov-stat .tile-sub { color: var(--ink-2); font-size: 11px; min-height: 15px; font-variant-numeric: tabular-nums; }
+  /* compact cell balance rows on the cards: same view as the tab, narrower label column */
+  .cells.compact { gap: 4px; margin-top: 6px; }
+  .cells.compact .cell { grid-template-columns: 14px 1fr 70px 88px; gap: 8px; font-size: 13px; }
+  .cells.compact .name { color: var(--muted); font-size: 12px; }
+  .scale.compact { margin-left: 22px; padding-right: 174px; }
+  .ov-nolead { margin-top: 6px; }
+  .ov-warn { min-height: 38px; font-size: 13px; }   /* fixed height so cards don't jump */
+  .ov-warn .hw { display: grid; grid-template-columns: 16px 1fr; gap: 8px; }
+  .ov-warn .hw svg { width: 16px; height: 16px; margin-top: 1px; }
+  .muted { color: var(--muted); }
+  .ov-actions { display: flex; gap: 8px; }
+  @media (max-width: 480px) { .ov-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* "Which charger is this?" chip and list, floating like the warnings so nothing moves */
+  .ident-wrap { position: relative; display: inline-flex; }
+  .ident-chip {
+    padding: 4px 10px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    white-space: nowrap; color: var(--ink); background: color-mix(in srgb, var(--warning) 22%, var(--surface));
+    border: 1px solid var(--warning);
+  }
+  .ident-pop {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; width: min(320px, calc(100vw - 32px));
+    display: grid; gap: 6px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .ident-pop p { margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
+  .ident-pop .btn { text-align: left; }
+
+  /* Warnings live in a header chip with a floating list, so they never push the page around. */
+  .health-wrap { position: relative; display: inline-flex; }
+  .health-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  }
+  .health-chip svg { width: 14px; height: 14px; }
+  .health-chip:hover { background: var(--grid); }
+  .health-pop {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: min(440px, calc(100vw - 32px));
+    display: grid; gap: 8px; padding: 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .hw { display: grid; grid-template-columns: 16px auto 1fr; gap: 8px; align-items: start; }
+  .hw svg { width: 16px; height: 16px; margin-top: 2px; }
+  .hw b { font-weight: 650; }
+  .hw.critical { color: var(--ink); }
+  .hw span { color: var(--ink-2); }
+  .hw.critical span { color: var(--ink); }
+  .cell .flag { display: inline-block; width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; }
+  .cell .flag svg { width: 12px; height: 12px; display: block; }
+  .hv-warning {
+    margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-weight: 600;
+    color: var(--ink); border: 1px solid var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent);
+  }
+  .msg.ok { color: var(--good); }
+  .msg.bad { color: var(--critical); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ChargerDash</h1>
+    <span class="sub">for SkyRC iMAX B6AC v2</span>
+    <span class="spacer"></span>
+    <span class="sub" id="phone" hidden></span>
+    <button class="btn" id="logging" type="button" title="Save each charge to a CSV file"></button>
+    <button class="btn" id="logs" type="button" hidden>Logs folder</button>
+    <button class="btn" id="sound" type="button" title="Play a sound when a program finishes or stops with an error"></button>
+    <button class="btn" id="help-btn" type="button" aria-haspopup="dialog">❔ Help</button>
+  </header>
+
+  <dialog id="help" aria-labelledby="help-title">
+    <div class="help-head">
+      <h2 id="help-title">How to use ChargerDash</h2>
+      <button class="btn" type="button" id="help-close">Close</button>
+    </div>
+    <div class="help-body">
+      <section>
+        <h3>Getting started</h3>
+        <ol>
+          <li>Plug each SkyRC iMAX B6AC v2 into this PC with its USB cable. ChargerDash finds it within a few seconds; nothing to set up.</li>
+          <li>Close SkyRC ChargeMaster first, so the two programs don't fight over the charger.</li>
+          <li>Give each charger an ID (below), especially if you have more than one.</li>
+        </ol>
+        <p><b>Use at your own risk.</b> ChargerDash is an unofficial hobby tool, not made or supported by SkyRC.
+          LiPo packs can catch fire: never leave a charge unattended, and charge on a fireproof surface or in a LiPo bag.</p>
+      </section>
+
+      <section>
+        <h3>Give each charger an ID</h3>
+        <p>These chargers have no serial number, so two of them look identical over USB. To tell them apart,
+          set each one's <b>Waste time</b> to a different value: on the charger, press <b>Batt Type</b> until
+          <b>USER SET PROGRAM</b>, press <b>Start</b>, scroll with <b>▲▼</b> to <b>CHG/DCHG WASTE TIME</b>,
+          press <b>Start</b>, change it, press <b>Start</b> to save.</p>
+        <p>Use anything except 10 min (the factory default), for example 11, 12, 13. Waste time only matters for
+          NiMH/NiCd cycling, so it doesn't affect lithium charging. The charger's tab then shows <b>ID 11</b> and
+          it's recognised on any USB port, with or without a pack.</p>
+      </section>
+
+      <section>
+        <h3>Charging</h3>
+        <ul>
+          <li><b>Start…</b> opens the program form: battery type (LiPo, LiIon, LiHV), Balance charge or Storage, and
+            the current (0.5 / 1.0 / 1.5 / 2.0 A or your own). Your last choices are remembered per charger.</li>
+          <li>The cell count is <b>detected from the balance lead</b> and checked against the main lead. The button
+            says exactly what will run, e.g. <i>Start 6S LiPo storage at 1.0 A</i>. Plug in both the balance and the
+            main lead.</li>
+          <li>It refuses to start if a lead is missing, the two leads disagree, a cell is below 3.00 V, or a cell is
+            above that battery type's full charge.</li>
+          <li><b>LiHV</b> charges to 4.35 V per cell. Only choose it for packs marked HV.</li>
+          <li><b>Stop</b> ends the running program. Programs started on the charger's own buttons show up here too.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Reading the screen</h3>
+        <ul>
+          <li><b>All chargers</b> (with two or more) shows every charger side by side. Click a name or <b>Details</b>
+            for its full tab with charts.</li>
+          <li><b>Cells</b>: each dot is a cell, the line is the pack average, and the mV figure is how far that cell is
+            from it. The spread is the gap between the highest and lowest cell.</li>
+          <li><b>Warnings</b> appear as a chip in the charger's header (click it for details) and as markers on the
+            cells: imbalance (30 / 100 / 200 mV), a cell drifting from the rest, low or over-discharged cells, cells
+            over full charge, leads that disagree, and a hot charger.</li>
+          <li><b>Time left</b> is an estimate. It learns from every program that finishes with the app open, so it
+            gets better over time. It can't estimate a program the app didn't see start.</li>
+          <li>Click a charger's <b>name</b> to rename it.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Swapping chargers</h3>
+        <ul>
+          <li>Unplugged chargers keep their tab and last readings; close the tab with <b>×</b>.</li>
+          <li>When a charger is plugged in, the app recognises it by its ID, by a program it was already running,
+            or by the pack on it. If it can't tell, it asks <b>Which charger is this?</b> in the header.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Logs, phone and sound</h3>
+        <ul>
+          <li><b>Logging</b> saves each program to a CSV file (one reading per second). <b>Logs folder</b> opens them.
+            Names, settings and logs live in <i>Documents\ChargerDash</i>.</li>
+          <li><b>Phone</b>: open the address shown in the header on a phone on the same Wi-Fi. If Windows Firewall
+            asks, allow private networks.</li>
+          <li><b>Sound</b> plays a chime when a program finishes and a warning tone if it stops with an error. Keep the
+            app open (minimised is fine) while charging.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>Troubleshooting</h3>
+        <ul>
+          <li><b>No charger found</b>: check the USB cable, close ChargeMaster, and try another USB port.</li>
+          <li><b>Charge stops early with an over-capacity error</b>: the charger's <b>Capacity cut-off</b> (User Set
+            menu) is reached. It's 1500 mAh by default, which a big pack can exceed.</li>
+          <li><b>Charge stops after an hour</b>: that's the charger's <b>Safety timer</b> (60 min by default).</li>
+          <li><b>Readings look wrong</b> right after plugging in: give it a few seconds; the first readings are skipped
+            until they're trustworthy.</li>
+        </ul>
+      </section>
+    </div>
+  </dialog>
+  <div class="card banner" id="banner" hidden></div>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Chargers"></nav>
+  <section class="overview" id="overview" aria-label="All chargers" hidden></section>
+  <div id="fleet"></div>
+</main>
+
+<template id="charger-tpl">
+  <section class="charger">
+    <header>
+      <button class="rename" title="Rename this charger"></button>
+      <span class="spacer"></span>
+      <span class="sub log"></span>
+      <span class="ident-wrap">
+        <button class="ident-chip" type="button" aria-expanded="false" hidden>Which charger is this?</button>
+        <div class="card ident-pop" hidden></div>
+      </span>
+      <span class="health-wrap">
+        <button class="health-chip" type="button" aria-expanded="false" hidden></button>
+        <div class="card health-pop" role="status" aria-live="polite" hidden></div>
+      </span>
+      <span class="program" hidden></span>
+      <span class="status"></span>
+      <button class="btn btn-start" type="button">Start…</button>
+      <button class="btn btn-stop" type="button">Stop</button>
+    </header>
+
+    <div class="card banner err" hidden></div>
+
+    <form class="card start-form" hidden>
+      <div class="row">
+        <label>Battery
+          <select name="battery">
+            <option value="lipo">LiPo (4.20 V full)</option>
+            <option value="lion">LiIon (4.10 V full)</option>
+            <option value="lihv">LiHV (4.35 V full)</option>
+          </select>
+        </label>
+        <label>Program
+          <select name="mode">
+            <option value="balance">Balance charge</option>
+            <option value="storage">Storage</option>
+          </select>
+        </label>
+        <div class="field">
+          <span class="field-label">Current</span>
+          <span class="amps">
+            <span class="presets" role="group" aria-label="Current presets">
+              <button type="button" class="preset" data-amps="0.5">0.5 A</button>
+              <button type="button" class="preset" data-amps="1.0">1.0 A</button>
+              <button type="button" class="preset" data-amps="1.5">1.5 A</button>
+              <button type="button" class="preset" data-amps="2.0">2.0 A</button>
+            </span>
+            <input name="current" type="number" min="0.1" max="6" step="0.1" value="1.0" aria-label="Custom current in amps"> A
+          </span>
+        </div>
+        <div class="detect"></div>
+      </div>
+      <div class="hv-warning" hidden>
+        ⚠ Only choose LiHV for packs marked HV or LiHV. Charging a regular LiPo to 4.35 V per cell
+        can damage it or start a fire.
+      </div>
+      <div class="row actions">
+        <button class="btn btn-primary" type="submit"></button>
+        <button class="btn btn-cancel" type="button">Cancel</button>
+      </div>
+    </form>
+    <div class="card banner msg" hidden></div>
+
+    <section class="tiles">
+      <div class="card tile"><div class="label">Pack voltage</div><div class="value t-v">–</div></div>
+      <div class="card tile"><div class="label">Current</div><div class="value t-a">–</div></div>
+      <div class="card tile"><div class="label">Charged</div><div class="value t-mah">–</div></div>
+      <div class="card tile"><div class="label">Elapsed</div><div class="value t-time">–</div></div>
+      <div class="card tile" title="Estimated from how the voltage and current are changing; it sharpens as the charge goes on">
+        <div class="label">Time left</div><div class="value t-eta">–</div><div class="tile-sub t-eta-sub"></div>
+      </div>
+      <div class="card tile"><div class="label">Charger temp</div><div class="value t-temp">–</div></div>
+    </section>
+
+    <section class="grid2">
+      <div class="card">
+        <h2>Cells <span class="sub spread"></span></h2>
+        <div class="cells"></div>
+        <div class="scale"></div>
+      </div>
+      <div class="card">
+        <h2>Cell voltages</h2>
+        <div class="legend"></div>
+        <div class="chart c-cells"></div>
+      </div>
+    </section>
+
+    <section class="charts">
+      <div class="card"><h2>Pack voltage</h2><div class="chart c-v"></div></div>
+      <div class="card"><h2>Current</h2><div class="chart c-a"></div></div>
+    </section>
+
+    <section class="card">
+      <details>
+        <summary>Readings table (last 30)</summary>
+        <div class="table-wrap"><table></table></div>
+      </details>
+    </section>
+  </section>
+</template>
+
+<script>
+const CELL_VARS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+const $ = id => document.getElementById(id);
+
+// Per-charger client state, keyed by charger id.
+const chargers = new Map();
+
+function fmtTime(s) {
+  if (s == null) return "–";
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = Math.floor(s % 60);
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+const unit = (v, u) => `${v}<span class="unit">${u}</span>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const ICONS = {
+  charging: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M9 1 3 9h4l-1 6 6-8H8z"/></svg>',
+  done: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 6.5 12 13 4.5"/></svg>',
+  error: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5 15 14H1z"/><rect x="7.2" y="6" width="1.6" height="4.2" fill="var(--surface)"/><rect x="7.2" y="11.2" width="1.6" height="1.6" fill="var(--surface)"/></svg>',
+  idle: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>',
+  grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg>',
+  off: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+};
+const STATUS = {
+  charging: ["Running", "var(--good)"],
+  done: ["Done", "var(--good)"],
+  error: ["Error", "var(--critical)"],
+  idle: ["Idle", "var(--ink-2)"],
+  off: ["Disconnected", "var(--critical)"],
+};
+
+// ---------- sounds (synthesised, no audio files) ----------
+let soundOn = true, audio = null;
+try { soundOn = localStorage.getItem("charger-sound") !== "off"; } catch {}
+
+function unlockAudio() {
+  // Browsers only allow audio after the user has interacted with the page.
+  try {
+    audio = audio || new AudioContext();
+    if (audio.state === "suspended") audio.resume();
+  } catch {}
+}
+
+function tone(freq, start, dur, type = "sine", vol = 0.25) {
+  const t = audio.currentTime + start, osc = audio.createOscillator(), gain = audio.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.05);
+}
+
+function playDone() {
+  if (!soundOn || !audio) return;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.16, 0.6));
+}
+
+function playError() {
+  if (!soundOn || !audio) return;
+  for (let i = 0; i < 3; i++) { tone(440, i * 0.5, 0.18, "square", 0.12); tone(330, i * 0.5 + 0.2, 0.18, "square", 0.12); }
+}
+
+function renderSoundButton() {
+  $("sound").textContent = soundOn ? "🔔 Sound on" : "🔕 Sound off";
+  $("sound").setAttribute("aria-pressed", soundOn);
+}
+
+$("sound").addEventListener("click", () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem("charger-sound", soundOn ? "on" : "off"); } catch {}
+  unlockAudio();
+  renderSoundButton();
+  playDone();
+});
+addEventListener("pointerdown", unlockAudio);
+addEventListener("keydown", unlockAudio);
+renderSoundButton();
+
+// ---------- line chart (SVG, single y-axis, crosshair tooltip) ----------
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || 1, raw = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= raw);
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return { ticks: out, step };
+}
+
+function downsample(rows, max = 500) {
+  if (rows.length <= max) return rows;
+  const stride = rows.length / max, out = [];
+  for (let i = 0; i < max; i++) out.push(rows[Math.floor(i * stride)]);
+  out.push(rows[rows.length - 1]);
+  return out;
+}
+
+function lineChart(host, rows, series, { fmt, pad = 0.02 }) {
+  host.innerHTML = "";
+  if (rows.length < 2) { host.innerHTML = '<div class="empty">Waiting for a running program…</div>'; return; }
+  const data = downsample(rows);
+  const W = host.clientWidth || 500, H = 200, L = 48, R = 10, T = 8, B = 22;
+  let lo = Infinity, hi = -Infinity;
+  for (const r of data) for (const s of series) { const v = s.get(r); if (v < lo) lo = v; if (v > hi) hi = v; }
+  const extra = Math.max((hi - lo) * 0.1, pad);
+  lo -= extra; hi += extra;
+  const { ticks } = niceTicks(lo, hi);
+  lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length - 1]);
+  const x0 = data[0].secs, x1 = data[data.length - 1].secs;
+  const X = s => L + (s - x0) / (x1 - x0 || 1) * (W - L - R);
+  const Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+  for (const t of ticks) {
+    svg += `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" stroke="var(--grid)" stroke-width="1"/>`;
+    svg += `<text x="${L - 6}" y="${Y(t) + 4}" text-anchor="end">${fmt(t)}</text>`;
+  }
+  svg += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--axis)"/>`;
+  const xt = niceTicks(x0, x1, Math.max(2, Math.floor(W / 110))).ticks;
+  for (const t of xt) if (t >= x0 && t <= x1) svg += `<text x="${X(t)}" y="${H - 6}" text-anchor="middle">${fmtTime(t)}</text>`;
+  for (const s of series) {
+    const d = data.map((r, i) => `${i ? "L" : "M"}${X(r.secs).toFixed(1)},${Y(s.get(r)).toFixed(1)}`).join("");
+    svg += `<path d="${d}" fill="none" stroke="var(${s.color})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  svg += `<g class="hover" style="display:none"><line y1="${T}" y2="${H - B}" stroke="var(--axis)"/>`;
+  for (const s of series) svg += `<circle r="4" fill="var(${s.color})" stroke="var(--surface)" stroke-width="2"/>`;
+  svg += `</g><rect x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/></svg>`;
+  host.insertAdjacentHTML("beforeend", svg + '<div class="tip"></div>');
+
+  const el = host.querySelector("svg"), hover = el.querySelector(".hover"), tip = host.querySelector(".tip");
+  const move = ev => {
+    const box = el.getBoundingClientRect();
+    const px = (ev.clientX - box.left) * (W / box.width);
+    const target = x0 + (px - L) / (W - L - R) * (x1 - x0);
+    let best = data[0];
+    for (const r of data) if (Math.abs(r.secs - target) < Math.abs(best.secs - target)) best = r;
+    const x = X(best.secs);
+    hover.style.display = "";
+    hover.querySelector("line").setAttribute("x1", x);
+    hover.querySelector("line").setAttribute("x2", x);
+    hover.querySelectorAll("circle").forEach((c, i) => { c.setAttribute("cx", x); c.setAttribute("cy", Y(series[i].get(best))); });
+    tip.innerHTML = `<div class="k">${fmtTime(best.secs)}</div>` + series.map(s =>
+      `<div>${series.length > 1 ? `<i style="background:var(${s.color})"></i>${s.name} ` : ""}<b>${fmt(s.get(best), true)}</b></div>`).join("");
+    tip.style.display = "block";
+    const left = x / W * box.width;
+    tip.style.left = Math.min(left + 12, box.width - tip.offsetWidth) + "px";
+    tip.style.top = "8px";
+  };
+  el.addEventListener("pointermove", move);
+  el.addEventListener("pointerleave", () => { hover.style.display = "none"; tip.style.display = "none"; });
+}
+
+// ---------- one charger panel ----------
+function createPanel(id) {
+  const el = $("charger-tpl").content.firstElementChild.cloneNode(true);
+  const c = { id, el, next: 0, session: null, history: [], latest: null, name: "" };
+  c.q = sel => el.querySelector(sel);
+  c.q(".rename").addEventListener("click", async () => {
+    const name = prompt("Name this charger", c.name);
+    if (!name || name.trim() === c.name) return;
+    await fetch("/api/rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name }) });
+    tick();
+  });
+  c.q(".health-chip").addEventListener("click", () => {
+    c.healthOpen = !c.healthOpen;
+    c.q(".health-pop").hidden = !c.healthOpen;
+    c.q(".health-chip").setAttribute("aria-expanded", c.healthOpen);
+  });
+  c.q(".ident-chip").addEventListener("click", () => {
+    c.identOpen = !c.identOpen;
+    renderIdentity(c);
+  });
+  c.q(".ident-pop").addEventListener("click", async ev => {
+    const to = ev.target.closest("[data-to]")?.dataset.to;
+    if (!to) return;
+    c.identOpen = false;
+    const r = await post("/api/assign", { id, to });
+    if (!r.ok) showMessage(c, r);
+    tick();
+  });
+  const form = c.q(".start-form");
+  c.q(".btn-start").addEventListener("click", () => {
+    form.hidden = !form.hidden;
+    if (!form.hidden && c.st && c.st.prefs) applyPrefs(c, c.st.prefs);
+    updateStartForm(c);
+  });
+  c.q(".btn-cancel").addEventListener("click", () => { form.hidden = true; });
+  form.addEventListener("input", () => { updateStartForm(c); savePrefs(c); });
+  form.querySelectorAll(".preset").forEach(b => b.addEventListener("click", () => {
+    form.current.value = b.dataset.amps;
+    updateStartForm(c);
+    savePrefs(c);
+  }));
+  form.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const btn = c.q(".btn-primary");
+    btn.disabled = true;
+    const r = await post("/api/start", { id, battery: form.battery.value, mode: form.mode.value, current_a: parseFloat(form.current.value) });
+    showMessage(c, r);
+    if (r.ok) form.hidden = true;
+    updateStartForm(c);
+  });
+  c.q(".btn-stop").addEventListener("click", async () => {
+    c.q(".btn-stop").disabled = true;
+    showMessage(c, await post("/api/stop", { id }));
+  });
+  $("fleet").appendChild(el);
+  chargers.set(id, c);
+  return c;
+}
+
+// ---------- which charger is this? ----------
+// The chargers have no serial number, so when the app had to guess which one was plugged in, it
+// asks. Options: confirm the guess, pick another known (unplugged) charger, or call it new.
+let knownChargers = [];
+function renderIdentity(c) {
+  const ask = !!(c.st && c.st.needs_confirm);
+  const chip = c.q(".ident-chip"), pop = c.q(".ident-pop");
+  chip.hidden = !ask;
+  if (!ask) c.identOpen = false;
+  chip.setAttribute("aria-expanded", !!c.identOpen);
+  pop.hidden = !c.identOpen;
+  if (!c.identOpen) return;
+  const html = `<p>These chargers have no serial number, so the app guessed. Which one did you plug in?</p>` +
+    `<button class="btn" data-to="${esc(c.id)}">Yes, it's ${esc(c.name)}</button>` +
+    knownChargers.map(k => `<button class="btn" data-to="${esc(k.id)}">It's ${esc(k.name)}</button>`).join("") +
+    `<button class="btn" data-to="new">A new charger</button>` +
+    `<p>Tip: give each charger its own Waste time setting (User Set menu, anything but 10 min) and the app will always know which is which.</p>`;
+  if (pop.innerHTML !== html) pop.innerHTML = html;
+}
+
+// ---------- tabs ----------
+let selectedTab = null;
+try { selectedTab = localStorage.getItem("charger-tab"); } catch {}
+let seenIds = null;
+
+const ALL = "__all";   // the "All chargers" overview tab
+
+function selectTab(id) {
+  selectedTab = id;
+  try { localStorage.setItem("charger-tab", id); } catch {}
+  showSelected();
+  renderTabs();
+  const c = chargers.get(id);
+  if (c) renderCharts(c);   // charts drawn while hidden have no width
+}
+
+function showSelected() {
+  chargers.forEach(c => { c.el.hidden = c.id !== selectedTab; });
+  $("overview").hidden = selectedTab !== ALL;
+  if (selectedTab === ALL) renderOverview();
+}
+
+function ago(ts) {
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`;
+}
+
+function renderTabs(list = lastList) {
+  let all = "";
+  if (list.length >= 2) {
+    const on = list.filter(st => st.connected).length;
+    const running = list.filter(st => chargers.get(st.id)?.prevState === "charging").length;
+    all = `<div class="tab" data-selected="${selectedTab === ALL}">
+      <button class="tab-btn" role="tab" aria-selected="${selectedTab === ALL}" data-id="${ALL}" title="Every charger at once">
+        <span style="color:var(--ink-2);display:inline-flex">${ICONS.grid}</span><b>All chargers</b>
+        <small>${on} connected · ${running} running</small>
+      </button></div>`;
+  }
+  const html = all + list.map(st => {
+    const c = chargers.get(st.id), state = c.prevState || "off";
+    const [label, color] = STATUS[state];
+    const d = st.device || {};
+    const id = d.tag != null ? `ID ${d.tag}` : "no ID";
+    const sub = st.connected ? [d.model, d.firmware && `FW ${d.firmware}`, id].filter(Boolean).join(" · ")
+      : `Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}`;
+    const tip = st.connected ? `${label}. ${d.model || ""} firmware ${d.firmware || "?"}, hardware ${d.hardware ?? "?"}. ` +
+      "This model has no serial number, so its ID is its Waste time setting (User Set menu). " +
+      (d.tag != null ? `This charger's is ${d.tag} min.` : "Set it to anything but 10 min to give this charger an ID.")
+      : `${st.name} is unplugged. Its last readings are kept here.`;
+    return `<div class="tab" data-selected="${st.id === selectedTab}">
+      <button class="tab-btn" role="tab" aria-selected="${st.id === selectedTab}" data-id="${esc(st.id)}" title="${esc(tip)}">
+        <span style="color:${color};display:inline-flex">${ICONS[state]}</span><b>${esc(st.name)}</b><small>${esc(sub)}</small>
+      </button>${st.connected ? "" : `<button class="tab-close" data-close="${esc(st.id)}" aria-label="Close ${esc(st.name)}" title="Close tab">×</button>`}
+    </div>`;
+  }).join("");
+  if ($("tabs").innerHTML !== html) $("tabs").innerHTML = html;
+}
+let lastList = [];
+
+// ---------- all chargers overview ----------
+function renderOverview(list = lastList) {
+  const host = $("overview");
+  const cards = list.map(st => {
+    const c = chargers.get(st.id);
+    if (!c) return "";
+    const s = c.latest, state = c.prevState || "off";
+    const [label, color] = STATUS[state];
+    const d = st.device || {};
+    const run = s && (s.running || s.done);
+    const prog = st.connected && s && state !== "idle" && s.program
+      ? `<span class="program">${[s.program.type, s.program.mode, `${s.program.cells}S`].map(esc).join('<span class="sep">·</span>')}</span>` : "";
+    const stat = (label, value, sub = "") =>
+      `<div class="ov-stat"><div class="label">${label}</div><div class="value">${value}</div><div class="tile-sub">${sub}</div></div>`;
+    const { items, cells: marked } = st.connected ? healthCheck(c, s) : { items: [], cells: new Map() };
+    const bal = cellBalance(s, marked, true);
+    const worst = items[0];
+    const warn = !st.connected ? `<span class="muted">Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}</span>`
+      : worst ? `<span class="hw ${worst.level}">${HEALTH_ICONS[worst.level]}<span>${esc(worst.text)}${items.length > 1 ? ` <b>+${items.length - 1} more</b>` : ""}</span></span>`
+      : `<span class="muted">No warnings</span>`;
+    return `<article class="card ov-card" data-state="${state}">
+      <header class="ov-head">
+        <span style="color:${color};display:inline-flex" title="${label}">${ICONS[state]}</span>
+        <button class="ov-name" data-open="${esc(st.id)}" title="Open ${esc(st.name)}">${esc(st.name)}</button>
+        <span class="sub">${d.tag != null ? `ID ${d.tag}` : ""}</span>
+        <span class="spacer"></span>${prog}
+      </header>
+      <div class="ov-stats">
+        ${stat("Pack", s ? unit(s.pack_v.toFixed(2), "V") : "–")}
+        ${stat("Current", s ? unit(s.current_a.toFixed(2), "A") : "–")}
+        ${stat("Charged", run ? unit(s.mah, "mAh") : "–", run ? fmtTime(s.secs) : "")}
+        ${stat("Time left", st.connected && c.eta ? c.eta.html : "–", st.connected && c.eta ? c.eta.sub : "")}
+      </div>
+      <div class="ov-cells">
+        <span class="label">Cells${bal ? ` · ${bal.spread}` : ""}</span>
+        ${bal ? `<div class="cells compact">${bal.rows}</div><div class="scale compact">${bal.scale}</div>`
+              : `<div class="muted ov-nolead">No balance lead</div>`}
+      </div>
+      <div class="ov-warn">${warn}</div>
+      <div class="ov-actions">
+        <button class="btn" data-open="${esc(st.id)}">Details</button>
+        ${state === "charging" ? `<button class="btn btn-stop" data-stop="${esc(st.id)}">Stop</button>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+  if (host.innerHTML !== cards) host.innerHTML = cards;
+}
+
+$("overview").addEventListener("click", async ev => {
+  const open = ev.target.closest("[data-open]")?.dataset.open;
+  if (open) return selectTab(open);
+  const stop = ev.target.closest("[data-stop]")?.dataset.stop;
+  if (stop) {
+    ev.target.disabled = true;
+    const r = await post("/api/stop", { id: stop });
+    const c = chargers.get(stop);
+    if (c) showMessage(c, r);
+    if (!r.ok) alert(r.message);
+    tick();
+  }
+});
+
+$("tabs").addEventListener("click", async ev => {
+  const close = ev.target.closest("[data-close]")?.dataset.close;
+  if (close) {
+    await post("/api/forget", { id: close });
+    return tick();
+  }
+  const id = ev.target.closest("[data-id]")?.dataset.id;
+  if (id) selectTab(id);
+});
+
+function applyPrefs(c, p) {
+  const form = c.q(".start-form");
+  form.battery.value = p.battery;
+  form.mode.value = p.mode;
+  form.current.value = p.current_a.toFixed(1);
+}
+
+function savePrefs(c) {
+  // Saved on the server per charger, so every browser and phone opens with the same settings.
+  const form = c.q(".start-form"), amps = parseFloat(form.current.value);
+  if (!(amps >= 0.1 && amps <= 6)) return;
+  clearTimeout(c.prefsTimer);
+  c.prefsTimer = setTimeout(async () => {
+    const r = await post("/api/prefs", { id: c.id, battery: form.battery.value, mode: form.mode.value, current_a: amps });
+    if (r.ok && c.st) c.st.prefs = r.prefs;
+  }, 400);
+}
+
+async function post(url, body) {
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return await res.json();
+  } catch {
+    return { ok: false, message: "Couldn't reach the dashboard server." };
+  }
+}
+
+function showMessage(c, r) {
+  const el = c.q(".msg");
+  el.hidden = false;
+  el.className = `card banner msg ${r.ok ? "ok" : "bad"}`;
+  el.textContent = r.message;
+  clearTimeout(c.msgTimer);
+  c.msgTimer = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
+// Full-charge voltage per cell; the server holds the authoritative copy and re-checks.
+const BATTERIES = {
+  lipo: { name: "LiPo", full: 4.20 },
+  lion: { name: "LiIon", full: 4.10 },
+  lihv: { name: "LiHV", full: 4.35 },
+};
+
+function updateStartForm(c) {
+  const form = c.q(".start-form"), st = c.st;
+  if (form.hidden || !st) return;
+  const detect = c.q(".detect"), btn = c.q(".btn-primary");
+  const amps = parseFloat(form.current.value);
+  const ampsOk = amps >= 0.1 && amps <= 6;
+  form.querySelectorAll(".preset").forEach(b => b.setAttribute("aria-pressed", Math.abs(parseFloat(b.dataset.amps) - amps) < 0.01));
+  const batt = BATTERIES[form.battery.value];
+  const label = `${batt.name} ${form.mode.selectedOptions[0].textContent.toLowerCase()}`;
+  c.q(".hv-warning").hidden = form.battery.value !== "lihv";
+  // The server re-checks all of this against the battery type before sending anything.
+  let ok = !!st.detected_cells;
+  if (ok) {
+    const cells = st.latest.cells_v.slice(0, st.detected_cells), high = Math.max(...cells);
+    if (high > batt.full + 0.05) {
+      ok = false;
+      const fits = Object.values(BATTERIES).find(b => high <= b.full + 0.05);
+      detect.className = "detect bad";
+      detect.textContent = `Highest cell is ${high.toFixed(3)} V, above a ${batt.name}'s ${batt.full.toFixed(2)} V full charge.` +
+        (fits ? ` If this pack really is ${fits.name}, choose ${fits.name}.` : "");
+    } else {
+      detect.className = "detect";
+      detect.innerHTML = `<b>${st.detected_cells}S detected</b> from the balance lead: ` +
+        `${st.latest.pack_v.toFixed(2)} V, cells ${Math.min(...cells).toFixed(3)}–${high.toFixed(3)} V`;
+    }
+  } else {
+    detect.className = "detect bad";
+    detect.textContent = st.detect_error;
+  }
+  btn.textContent = ok
+    ? `Start ${st.detected_cells}S ${label} at ${ampsOk ? amps.toFixed(1) : "?"} A`
+    : "Start";
+  btn.disabled = !ok || !ampsOk || !st.connected || (c.latest && c.latest.running);
+}
+
+// ---------- pack health warnings ----------
+// Thresholds in one place so they're easy to tune.
+const HEALTH = {
+  spreadNotice: 0.030, spreadWarn: 0.100, spreadCritical: 0.200,   // V between highest and lowest cell
+  spreadGrowth: 0.030,                                              // V the spread widened during a program
+  driftSettleSecs: 60, driftWindowSecs: 300,                        // baseline after settling, then watch this long
+  lowWarn: 3.30, lowCritical: 3.00,                                 // V per cell
+  leadMismatch: 0.03,                                               // fraction main lead vs balance sum
+  tempWarn: 55, tempCritical: 65,                                   // °C charger internal
+};
+const FULL_V = { LiPo: 4.20, LiIon: 4.10, LiHV: 4.35, LiFe: 3.60 };
+
+const LEVEL_RANK = { critical: 0, serious: 1, warning: 2 };
+
+// Returns { items: [{level, text}], cells: Map of 0-based cell index -> worst level }.
+function healthCheck(c, s) {
+  const items = [], marked = new Map();
+  const mark = (i, level) => { if (!marked.has(i) || LEVEL_RANK[level] < LEVEL_RANK[marked.get(i)]) marked.set(i, level); };
+  if (!s || !s.cells_v) return { items, cells: marked };
+  const cells = s.cells_v.map((v, i) => ({ v, i })).filter(x => x.v > 1);
+  const add = (level, text) => items.push({ level, text });
+  const mV = v => `${Math.round(v * 1000)} mV`;
+
+  if (cells.length) {
+    const vs = cells.map(x => x.v), lo = Math.min(...vs), hi = Math.max(...vs), spread = hi - lo;
+    const lowCell = cells.find(x => x.v === lo).i + 1, highCell = cells.find(x => x.v === hi).i + 1;
+
+    const spreadLevel = spread >= HEALTH.spreadCritical ? "critical" : spread >= HEALTH.spreadWarn ? "serious"
+      : spread >= HEALTH.spreadNotice ? "warning" : null;
+    if (spreadLevel === "critical") add("critical", `Cells are badly out of balance: ${mV(spread)} between cell ${highCell} and cell ${lowCell}. The pack may have a damaged cell.`);
+    else if (spreadLevel === "serious") add("serious", `Wide cell range: ${mV(spread)} between cell ${highCell} and cell ${lowCell}. Balance charge it and keep an eye on cell ${lowCell}.`);
+    else if (spreadLevel) add("warning", `Cells are slightly out of balance (${mV(spread)}). A balance charge should even them out.`);
+    if (spreadLevel) { mark(lowCell - 1, spreadLevel); mark(highCell - 1, spreadLevel); }
+
+    // Spread growing during a program often means one cell is weaker than the rest. Compare
+    // against a baseline taken once current has settled, so the jump when current starts
+    // (internal resistance differences) isn't mistaken for drift.
+    const base = c.history.find(r => r.secs >= HEALTH.driftSettleSecs && r.cells_v);
+    if (s.running && base && s.secs >= base.secs + HEALTH.driftWindowSecs) {
+      const bv = base.cells_v.slice(0, cells.length);
+      const bAvg = bv.reduce((a, b) => a + b, 0) / bv.length, nAvg = vs.reduce((a, b) => a + b, 0) / vs.length;
+      const baseSpread = Math.max(...bv) - Math.min(...bv);
+      if (spread - baseSpread >= HEALTH.spreadGrowth) {
+        // The cell whose distance from the pack average changed most is the likely culprit.
+        const drift = cells.map((x, k) => ({ i: x.i, d: (x.v - nAvg) - (bv[k] - bAvg) }));
+        const worst = drift.reduce((a, b) => (Math.abs(b.d) > Math.abs(a.d) ? b : a));
+        add("serious", `Cell range has grown from ${mV(baseSpread)} to ${mV(spread)} during this program, mostly cell ${worst.i + 1} ` +
+          `(${worst.d > 0 ? "rising" : "falling"} ${mV(Math.abs(worst.d))} faster than the rest). It may be weaker than the others.`);
+        mark(worst.i, "serious");
+      }
+    }
+
+    const low = cells.filter(x => x.v < HEALTH.lowWarn);
+    if (low.some(x => x.v < HEALTH.lowCritical)) add("critical", `Over-discharged: cell ${low.filter(x => x.v < HEALTH.lowCritical).map(x => x.i + 1).join(", ")} below ${HEALTH.lowCritical.toFixed(2)} V. The pack may be damaged; check it before charging.`);
+    else if (low.length) add("serious", `Low cell voltage: cell ${low.map(x => x.i + 1).join(", ")} below ${HEALTH.lowWarn.toFixed(2)} V.`);
+    low.forEach(x => mark(x.i, x.v < HEALTH.lowCritical ? "critical" : "serious"));
+
+    const type = s.program && (s.running || s.done) ? s.program.type : null;
+    const full = FULL_V[type] || FULL_V.LiPo;
+    const over = cells.filter(x => x.v > full + 0.03);
+    if (over.length)
+      add("critical", `Cell ${over.map(x => x.i + 1).join(", ")} above ${type ? `a ${type}'s` : "a LiPo's"} ${full.toFixed(2)} V full charge` +
+        (type ? "." : ". Fine only if this is an HV pack."));
+    over.forEach(x => mark(x.i, "critical"));
+
+    const total = vs.reduce((a, b) => a + b, 0);
+    if (s.pack_v > 1 && Math.abs(s.pack_v - total) > total * HEALTH.leadMismatch)
+      add("serious", `Main lead reads ${s.pack_v.toFixed(2)} V but the cells add up to ${total.toFixed(2)} V. Check both plugs are seated and on the same pack.`);
+  }
+
+  if (s.temp_c != null) {
+    if (s.temp_c >= HEALTH.tempCritical) add("critical", `Charger is very hot (${s.temp_c} °C). Check its fan and airflow.`);
+    else if (s.temp_c >= HEALTH.tempWarn) add("warning", `Charger is running warm (${s.temp_c} °C).`);
+  }
+
+  items.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+  return { items, cells: marked };
+}
+
+const HEALTH_ICONS = {
+  critical: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--critical)"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  serious: '<svg viewBox="0 0 16 16"><path d="M8 1.2 15.2 14H.8z" fill="var(--serious)"/><rect x="7.2" y="5.6" width="1.6" height="4.4" rx=".6" fill="#fff"/><rect x="7.2" y="11.1" width="1.6" height="1.6" rx=".6" fill="#fff"/></svg>',
+  warning: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--warning)"/><rect x="7.2" y="3.8" width="1.6" height="5.4" rx=".6" fill="#3a2a00"/><rect x="7.2" y="10.6" width="1.6" height="1.6" rx=".6" fill="#3a2a00"/></svg>',
+};
+const HEALTH_LABELS = { critical: "Critical", serious: "Warning", warning: "Note" };
+
+function renderHealth(c, s, connected) {
+  const { items, cells } = connected ? healthCheck(c, s) : { items: [], cells: new Map() };
+  const chip = c.q(".health-chip"), pop = c.q(".health-pop");
+  chip.hidden = !items.length;
+  if (!items.length) c.healthOpen = false;
+  if (items.length) {
+    // Items are sorted worst first, so the chip shows the worst level and the total count.
+    const worst = items[0].level;
+    const chipHtml = `${HEALTH_ICONS[worst]}${HEALTH_LABELS[worst]}${items.length > 1 ? ` · ${items.length}` : ""}`;
+    if (chip.innerHTML !== chipHtml) chip.innerHTML = chipHtml;
+    chip.title = items.map(w => w.text).join("\n");
+    const popHtml = items.map(w =>
+      `<div class="hw ${w.level}">${HEALTH_ICONS[w.level]}<b>${HEALTH_LABELS[w.level]}</b><span>${esc(w.text)}</span></div>`).join("");
+    if (pop.innerHTML !== popHtml) pop.innerHTML = popHtml;
+  }
+  pop.hidden = !c.healthOpen;
+  chip.setAttribute("aria-expanded", !!c.healthOpen);
+  return cells;
+}
+
+// Close any open warnings list when clicking elsewhere.
+document.addEventListener("click", ev => {
+  chargers.forEach(c => {
+    if (c.healthOpen && !c.q(".health-wrap").contains(ev.target)) { c.healthOpen = false; c.q(".health-pop").hidden = true; }
+    if (c.identOpen && !c.q(".ident-wrap").contains(ev.target)) { c.identOpen = false; renderIdentity(c); }
+  });
+});
+
+// ---------- time-left estimate ----------
+// The charger doesn't know the pack's capacity, so this works from the trend in the readings:
+//  - constant-current phase: extrapolate the average cell voltage to the program's target, plus
+//    a margin for the top-off phase that follows a full charge;
+//  - top-off (constant-voltage) phase: fit the current's exponential fall and extrapolate to
+//    the current the charger stops at. That cut-off is learned by the server from programs
+//    that finished (storage stops much earlier than a full charge), as a share of the peak
+//    current, which the server remembers across app restarts.
+const STORAGE_V = { LiPo: 3.85, LiHV: 3.85, LiIon: 3.75, LiFe: 3.30 };
+const ETA = {
+  skipSecs: 30,          // ignore the jump when current first starts
+  windowSecs: 300,       // fit over the last 5 minutes
+  minPoints: 60,         // need at least a minute of readings
+  cvRatio: 0.85,         // current below this share of its peak = top-off phase
+  smoothPoints: 15,      // rolling median over this many readings; the current is noisy
+  tailFull: 0.15,        // top-off margin for a full charge, as a share of total time
+  tailStorage: 0.05,
+};
+let cutoffRatios = { storage: 0.16, full: 0.10 };   // replaced by the server's learned values
+
+function rollingMedian(values, n) {
+  return values.map((_, i) => {
+    const w = values.slice(Math.max(0, i - n + 1), i + 1).sort((a, b) => a - b);
+    return w[w.length >> 1];
+  });
+}
+
+function fitLine(xs, ys) {
+  const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+  const slope = den ? num / den : 0;
+  return { slope, at: x => my + slope * (x - mx) };
+}
+
+// Returns null (no estimate for this program), "learning", "unknown", or seconds remaining.
+function estimateRemaining(c, s) {
+  if (!s || !s.running || !s.program) return null;
+  const { mode, type } = s.program;
+  const full = ["Charge", "Balance charge", "Fast charge"].includes(mode), storage = mode === "Storage";
+  const target = full ? FULL_V[type] : storage ? STORAGE_V[type] : null;
+  if (!target) return null;
+
+  const rows = c.history.filter(r => r.secs >= ETA.skipSecs && r.secs >= s.secs - ETA.windowSecs);
+  if (rows.length < ETA.minPoints) return "learning";
+  // The cut-off is a share of the program's peak current. If the app started after the program
+  // did and has no saved peak, that peak is unknown and any estimate would be a guess.
+  const sawStart = c.history.length && c.history[0].secs <= 90;
+  if (!c.peakA && !sawStart) return "unknown";
+  const peak = Math.max(c.peakA || 0, ...c.history.filter(r => r.secs >= ETA.skipSecs).map(r => r.current_a));
+  const smooth = rollingMedian(rows.map(r => r.current_a), ETA.smoothPoints);
+  const amps = smooth[smooth.length - 1];
+
+  // What finished programs like this one taught us: where the current starts to fall, and how
+  // long the top-off then takes. That's a property of the pack and current, not of how full the
+  // pack started, so it's the best predictor of the top-off.
+  const profile = learnedProfile(s.program, peak);
+
+  if (peak > 0.2 && amps < peak * ETA.cvRatio) {
+    // Top-off phase.
+    const taper = c.history.find(r => r.secs >= ETA.skipSecs && r.current_a < peak * ETA.cvRatio);
+    if (profile && taper) {
+      const left = profile.tail_secs - (s.secs - taper.secs);
+      if (left > 30) return left;
+    }
+    // No profile yet, or running past it: extrapolate the current's fall to the cut-off.
+    const pts = rows.map((r, i) => [r.secs, smooth[i]]).filter(([, a]) => a > 0.01);
+    if (pts.length < ETA.minPoints / 2) return profile ? 30 : "learning";
+    const { slope } = fitLine(pts.map(p => p[0]), pts.map(p => Math.log(p[1])));
+    const cutoff = peak * (storage ? cutoffRatios.storage : cutoffRatios.full);
+    if (amps <= cutoff) return 0;
+    const est = slope < 0 ? Math.log(amps / cutoff) / -slope : null;
+    if (profile) return Math.min(est ?? 30, 120);   // past the learned top-off: should be close
+    return est ?? "learning";
+  }
+
+  // Constant-current phase: extrapolate the average cell voltage to where the current will start
+  // to fall (learned, or the program's target), then add the top-off.
+  const avg = r => { const v = r.cells_v.filter(x => x > 1); return v.reduce((a, b) => a + b, 0) / v.length; };
+  const line = fitLine(rows.map(r => r.secs), rows.map(avg));
+  const gap = (profile ? profile.taper_v : target) - line.at(s.secs);
+  if (line.slope * gap <= 0 && Math.abs(gap) >= 0.002) {
+    // Already past the learned taper voltage: the top-off is about to start.
+    return profile && Math.sign(gap) !== Math.sign(line.slope) ? profile.tail_secs : "learning";
+  }
+  const toTaper = Math.abs(gap) < 0.002 ? 0 : gap / line.slope;
+  if (profile) return toTaper + profile.tail_secs;
+  const share = full ? ETA.tailFull : ETA.tailStorage;
+  return toTaper + share * (s.secs + toTaper) / (1 - share);
+}
+
+// Median taper voltage and top-off time from finished programs of the same kind. Prefers ones
+// with the same cell count and a similar current, since the top-off time depends on both.
+let finishes = [];
+function learnedProfile(program, peak) {
+  const same = finishes.filter(f => f.mode === program.mode && f.type === program.type);
+  const close = same.filter(f => f.cells === program.cells && Math.abs(f.peak_a - peak) <= 0.3 * peak);
+  const pick = close.length ? close : same;
+  if (!pick.length) return null;
+  const med = k => { const v = pick.map(f => f[k]).sort((a, b) => a - b); return v[v.length >> 1]; };
+  return { taper_v: med("taper_v"), tail_secs: med("tail_secs") };
+}
+
+function fmtDuration(sec) {
+  const m = Math.max(1, Math.round(sec / 60));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+}
+
+function renderEta(c, s) {
+  const est = estimateRemaining(c, s);
+  const valueEl = c.q(".t-eta"), subEl = c.q(".t-eta-sub");
+  if (typeof est !== "number") {
+    c.etaFinish = null;
+    valueEl.innerHTML = est === "learning" ? '<span class="unit">estimating…</span>' : "–";
+    subEl.textContent = est === "unknown" ? "started before the app" : "";
+    c.eta = { html: valueEl.innerHTML, sub: subEl.textContent };   // reused by the overview
+    return;
+  }
+  // Smooth the predicted finish time, not the remaining time, so it counts down steadily.
+  const finish = Date.now() + est * 1000;
+  c.etaFinish = c.etaFinish == null ? finish : c.etaFinish * 0.85 + finish * 0.15;
+  const left = Math.max(0, (c.etaFinish - Date.now()) / 1000);
+  valueEl.innerHTML = left < 60 ? "almost done" : `~${fmtDuration(left)}`;
+  subEl.textContent = `done ≈ ${new Date(c.etaFinish).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  c.eta = { html: valueEl.innerHTML, sub: subEl.textContent };
+}
+
+function renderTiles(c, s) {
+  const run = s && (s.running || s.done);
+  c.q(".t-v").innerHTML = s ? unit(s.pack_v.toFixed(2), "V") : "–";
+  c.q(".t-a").innerHTML = s ? unit(s.current_a.toFixed(2), "A") : "–";
+  c.q(".t-mah").innerHTML = run ? unit(s.mah, "mAh") : "–";
+  c.q(".t-time").textContent = run ? fmtTime(s.secs) : "–";
+  c.q(".t-temp").innerHTML = run ? unit(s.temp_c, "°C") : "–";
+}
+
+// The cell balance view: each cell as a dot on a shared scale around the pack average. Used by
+// a charger's tab and by its card in the overview. Returns null when there's no balance lead.
+function cellBalance(s, marked = new Map(), short = false) {
+  const cells = s && s.cells_v ? s.cells_v.map((v, i) => ({ i, v })).filter(x => x.v > 1) : [];
+  if (!cells.length) return null;
+  const vs = cells.map(x => x.v), min = Math.min(...vs), max = Math.max(...vs);
+  const avg = vs.reduce((a, b) => a + b, 0) / vs.length;
+  const half = Math.max(0.03, (max - min) / 2 + 0.01), mid = (max + min) / 2;
+  const lo = mid - half, hi = mid + half, P = v => ((v - lo) / (hi - lo) * 100).toFixed(1);
+  const rows = cells.map(x => {
+    const d = Math.round((x.v - avg) * 1000);
+    const tag = cells.length > 1 && x.v === min ? " · low" : cells.length > 1 && x.v === max ? " · high" : "";
+    return `<div class="cell"><span class="name">${short ? x.i + 1 : `Cell ${x.i + 1}`}</span>
+      <div class="track"><span class="avg" style="left:${P(avg)}%"></span><span class="dot" style="left:${P(x.v)}%"></span></div>
+      <span class="v">${marked.has(x.i) ? `<span class="flag" title="${HEALTH_LABELS[marked.get(x.i)]}">${HEALTH_ICONS[marked.get(x.i)]}</span>` : ""}${x.v.toFixed(3)} V</span><span class="d">${d > 0 ? "+" : ""}${d} mV${tag}</span></div>`;
+  }).join("");
+  return {
+    rows,
+    spread: `${cells.length}S · spread ${Math.round((max - min) * 1000)} mV`,
+    scale: `<span>${lo.toFixed(3)}</span><span>avg ${avg.toFixed(3)}</span><span>${hi.toFixed(3)}</span>`,
+  };
+}
+
+function renderCells(c, s, marked = new Map()) {
+  const b = cellBalance(s, marked);
+  c.q(".cells").innerHTML = b ? b.rows : '<div class="empty" style="padding:20px 0">No balance lead connected</div>';
+  c.q(".scale").innerHTML = b ? b.scale : "";
+  c.q(".spread").textContent = b ? b.spread : "";
+}
+
+function cellCount(c) {
+  const ref = c.latest || c.history[c.history.length - 1];
+  return ref ? ref.cells_v.filter(v => v > 1).length : 0;
+}
+
+function renderCharts(c) {
+  const n = cellCount(c);
+  const cellSeries = Array.from({ length: n }, (_, i) => ({ name: `Cell ${i + 1}`, color: CELL_VARS[i], get: r => r.cells_v[i] }));
+  c.q(".legend").innerHTML = cellSeries.map(s => `<span><i style="background:var(${s.color})"></i>${s.name}</span>`).join("");
+  lineChart(c.q(".c-cells"), c.history, cellSeries, { fmt: (v, tip) => v.toFixed(tip ? 3 : 2) + (tip ? " V" : ""), pad: 0.005 });
+  lineChart(c.q(".c-v"), c.history, [{ name: "Pack", color: "--s1", get: r => r.pack_v }],
+    { fmt: (v, tip) => v.toFixed(tip ? 3 : 2) + (tip ? " V" : ""), pad: 0.02 });
+  lineChart(c.q(".c-a"), c.history, [{ name: "Current", color: "--s1", get: r => r.current_a }],
+    { fmt: (v, tip) => v.toFixed(2) + (tip ? " A" : ""), pad: 0.05 });
+}
+
+function renderTable(c) {
+  const rows = c.history.slice(-30).reverse();
+  const n = cellCount(c) || 6;
+  c.q("table").innerHTML = `<tr><th>Time</th><th>Pack V</th><th>A</th><th>mAh</th><th>°C</th>${
+    Array.from({ length: n }, (_, i) => `<th>C${i + 1}</th>`).join("")}</tr>` +
+    rows.map(r => `<tr><td>${fmtTime(r.secs)}</td><td>${r.pack_v.toFixed(3)}</td><td>${r.current_a.toFixed(3)}</td>
+      <td>${r.mah}</td><td>${r.temp_c}</td>${r.cells_v.slice(0, n).map(v => `<td>${v.toFixed(3)}</td>`).join("")}</tr>`).join("");
+}
+
+function renderPanel(c, st) {
+  const s = c.latest;
+  const state = !st.connected ? "off" : s && s.running ? "charging" : s && s.done ? "done" : s && s.error ? "error" : "idle";
+  // Sound only on a live transition out of Running, not when the page first loads.
+  if (c.prevState === "charging" && state === "done") playDone();
+  if (c.prevState === "charging" && state === "error") playError();
+  c.prevState = state;
+  const prog = st.connected && s && state !== "idle" ? s.program : null;
+  c.q(".program").hidden = !prog;
+  if (prog) c.q(".program").innerHTML = [prog.type, prog.mode, `${prog.cells}S`].map(esc).join('<span class="sep">·</span>');
+  const [label, color] = STATUS[state];
+  c.q(".status").innerHTML = `<span style="color:${color};display:inline-flex">${ICONS[state]}</span>${label}`;
+  c.st = st;
+  c.q(".btn-start").disabled = state === "charging" || state === "off";
+  c.q(".btn-stop").disabled = state !== "charging";
+  if (state === "charging" || state === "off") c.q(".start-form").hidden = true;
+  updateStartForm(c);
+  c.q(".rename").textContent = st.name;
+  c.q(".log").textContent = st.log ? `Logging to ${st.log}` : "";
+  renderIdentity(c);
+  const err = !st.connected ? `Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}. Showing its last readings; plug it back in to reconnect.`
+    : state === "error" ? `The charger stopped the program: ${s.error}.` : "";
+  c.q(".err").hidden = !err;
+  c.q(".err").textContent = err;
+  renderTiles(c, c.latest);
+  renderEta(c, st.connected ? c.latest : null);
+  renderCells(c, c.latest, renderHealth(c, c.latest, st.connected));
+  renderCharts(c);
+  renderTable(c);
+}
+
+let busy = false;
+async function tick() {
+  if (busy) return;
+  busy = true;
+  try {
+    const since = [...chargers.values()].map(c => `${c.id}:${c.next}`).join(",");
+    const res = await fetch(`/api/state?since=${since}`);
+    const { chargers: list, logging, cutoff_ratios, finishes: learned, known } = await res.json();
+    if (cutoff_ratios) cutoffRatios = cutoff_ratios;
+    if (learned) finishes = learned;
+    knownChargers = known || [];
+    renderLogging(logging);
+    let refetch = false;
+    for (const st of list) {
+      const c = chargers.get(st.id) || createPanel(st.id);
+      if (st.session !== c.session) {
+        // New program started (or first load): drop old history and fetch it all again.
+        refetch = c.session !== null || st.next > st.history.length;
+        c.session = st.session; c.history = []; c.next = 0;
+        if (refetch) continue;
+      }
+      c.history.push(...st.history);
+      c.next = st.next;
+      c.latest = st.latest;
+      c.name = st.name;
+      c.peakA = st.peak_a;
+      renderPanel(c, st);
+    }
+    // Drop panels for tabs that were closed.
+    const ids = new Set(list.map(st => st.id));
+    chargers.forEach((c, id) => { if (!ids.has(id)) { c.el.remove(); chargers.delete(id); } });
+    // Pick the tab to show: keep the user's choice, but jump to a newly plugged-in charger when
+    // the one being shown is unplugged (hot-swapping on one port).
+    // With two or more chargers the overview is the default, and stays put when one is swapped.
+    const sel = list.find(st => st.id === selectedTab);
+    const fresh = seenIds ? list.filter(st => !seenIds.has(st.id) && st.connected) : [];
+    if (selectedTab === ALL && list.length >= 2) { /* keep the overview */ }
+    else if (fresh.length && sel && !sel.connected) selectedTab = fresh[0].id;
+    else if (!sel) selectedTab = list.length >= 2 ? ALL : (list.find(st => st.connected) || list[0] || {}).id ?? null;
+    seenIds = ids;
+    lastList = list;
+    showSelected();
+    renderTabs(list);
+    $("banner").hidden = list.length > 0;
+    $("banner").textContent = "No chargers found. Plug one in over USB and close SkyRC ChargeMaster.";
+    if (refetch) { busy = false; return tick(); }
+  } catch {
+    $("banner").hidden = false;
+    $("banner").textContent = "Dashboard server isn't responding.";
+  }
+  busy = false;
+}
+
+// Help guide: a dialog, opened from the header and once automatically on first run.
+$("help-btn").addEventListener("click", () => $("help").showModal());
+$("help-close").addEventListener("click", () => $("help").close());
+$("help").addEventListener("click", ev => { if (ev.target === $("help")) $("help").close(); });   // backdrop
+try {
+  if (!localStorage.getItem("help-seen")) {
+    localStorage.setItem("help-seen", "1");
+    $("help").showModal();
+  }
+} catch {}
+
+// Logging is one app-wide setting kept by the server, so every window and phone agrees.
+let loggingOn = null;
+function renderLogging(on) {
+  loggingOn = on;
+  $("logging").textContent = on ? "📄 Logging on" : "📄 Logging off";
+  $("logging").setAttribute("aria-pressed", on);
+}
+$("logging").addEventListener("click", async () => {
+  if (loggingOn === null) return;
+  const r = await post("/api/logging", { on: !loggingOn });
+  if (r.ok) renderLogging(r.logging);
+});
+
+// Phone address and the logs-folder button only make sense on the PC running ChargerDash.
+fetch("/api/info").then(r => r.json()).then(info => {
+  if (!info.local) return;
+  if (info.phone_url) {
+    $("phone").hidden = false;
+    $("phone").textContent = `Phone: ${info.phone_url}`;
+  }
+  $("logs").hidden = false;
+  $("logs").title = `Open ${info.data_dir}\\logs`;
+  $("logs").addEventListener("click", () => post("/api/open-logs", {}));
+}).catch(() => {});
+
+tick();
+setInterval(tick, 1000);
+addEventListener("resize", () => chargers.forEach(renderCharts));
+</script>
+</body>
+</html>

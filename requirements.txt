@@ -1,0 +1,2 @@
+hidapi>=0.14
+pywebview>=5.0
