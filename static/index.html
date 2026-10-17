@@ -309,7 +309,8 @@
             the current (0.5 / 1.0 / 1.5 / 2.0 A or your own). Your last choices are remembered per charger.</li>
           <li>The cell count is <b>detected from the balance lead</b> and checked against the main lead. The button
             says exactly what will run, e.g. <i>Start 6S LiPo storage at 1.0 A</i>. Plug in both the balance and the
-            main lead.</li>
+            main lead. <b>Cells</b> starts at the detected count; set it to what the pack's label says. If the two
+            disagree, Start stays off until you check the pack and the balance plug.</li>
           <li>It refuses to start if a lead is missing, the two leads disagree, a cell is below 3.00 V, or a cell is
             above that battery type's full charge.</li>
           <li><b>LiHV</b> charges to 4.35 V per cell. Only choose it for packs marked HV.</li>
@@ -402,6 +403,17 @@
             <option value="lipo">LiPo (4.20 V full)</option>
             <option value="lion">LiIon (4.10 V full)</option>
             <option value="lihv">LiHV (4.35 V full)</option>
+          </select>
+        </label>
+        <label>Cells
+          <select name="cells">
+            <option value="">?</option>
+            <option value="1">1S</option>
+            <option value="2">2S</option>
+            <option value="3">3S</option>
+            <option value="4">4S</option>
+            <option value="5">5S</option>
+            <option value="6">6S</option>
           </select>
         </label>
         <label>Program
@@ -659,6 +671,7 @@ function createPanel(id) {
   c.q(".btn-start").addEventListener("click", () => {
     form.hidden = !form.hidden;
     if (!form.hidden && c.st && c.st.prefs) applyPrefs(c, c.st.prefs);
+    form.cells.value = "";   // re-preset from the pack on the charger now
     updateStartForm(c);
   });
   c.q(".btn-cancel").addEventListener("click", () => { form.hidden = true; });
@@ -672,7 +685,8 @@ function createPanel(id) {
     ev.preventDefault();
     const btn = c.q(".btn-primary");
     btn.disabled = true;
-    const r = await post("/api/start", { id, battery: form.battery.value, mode: form.mode.value, current_a: parseFloat(form.current.value) });
+    const r = await post("/api/start", { id, battery: form.battery.value, mode: form.mode.value,
+      cells: parseInt(form.cells.value), current_a: parseFloat(form.current.value) });
     showMessage(c, r);
     if (r.ok) form.hidden = true;
     updateStartForm(c);
@@ -892,9 +906,17 @@ function updateStartForm(c) {
   c.q(".hv-warning").hidden = form.battery.value !== "lihv";
   // The server re-checks all of this against the battery type before sending anything.
   let ok = !!st.detected_cells;
+  // The cell picker starts at the detected count; picking anything else blocks Start.
+  if (ok && !form.cells.value) form.cells.value = st.detected_cells;
+  const picked = parseInt(form.cells.value);
   if (ok) {
     const cells = st.latest.cells_v.slice(0, st.detected_cells), high = Math.max(...cells);
-    if (high > batt.full + 0.05) {
+    if (picked !== st.detected_cells) {
+      ok = false;
+      detect.className = "detect bad";
+      detect.textContent = `You picked ${picked}S but the balance lead shows ${st.detected_cells}S. ` +
+        `Check the pack's label and that the balance plug is fully seated.`;
+    } else if (high > batt.full + 0.05) {
       ok = false;
       const fits = Object.values(BATTERIES).find(b => high <= b.full + 0.05);
       detect.className = "detect bad";
@@ -923,6 +945,7 @@ const HEALTH = {
   driftSettleSecs: 60, driftWindowSecs: 300,                        // baseline after settling, then watch this long
   lowWarn: 3.30, lowCritical: 3.00,                                 // V per cell
   leadMismatch: 0.03,                                               // fraction main lead vs balance sum
+  idleMainOffset: 1.5,                                              // V the idle main lead may read above it
   tempWarn: 55, tempCritical: 65,                                   // °C charger internal
 };
 const FULL_V = { LiPo: 4.20, LiIon: 4.10, LiHV: 4.35, LiFe: 3.60 };
@@ -981,8 +1004,11 @@ function healthCheck(c, s) {
     over.forEach(x => mark(x.i, "critical"));
 
     const total = vs.reduce((a, b) => a + b, 0);
-    if (s.pack_v > 1 && Math.abs(s.pack_v - total) > total * HEALTH.leadMismatch)
-      add("serious", `Main lead reads ${s.pack_v.toFixed(2)} V but the cells add up to ${total.toFixed(2)} V. Check both plugs are seated and on the same pack.`);
+    // Idle readings carry the raw main lead as main_v, which runs up to HEALTH.idleMainOffset high.
+    const main = s.main_v ?? s.pack_v, diff = main - total;
+    const above = s.main_v != null ? HEALTH.idleMainOffset : total * HEALTH.leadMismatch;
+    if (main > 1 && (diff > above || -diff > total * HEALTH.leadMismatch))
+      add("serious", `Main lead reads ${main.toFixed(2)} V but the cells add up to ${total.toFixed(2)} V. Check both plugs are seated and on the same pack.`);
   }
 
   if (s.temp_c != null) {

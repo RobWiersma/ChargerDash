@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["server.py", "--host", "127.0.0.1"],
       "port": 8765
+    },
+    {
+      "name": "charger-dash-test",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8766", "--bind", "127.0.0.1", "--directory", "static"],
+      "port": 8766
     }
   ]
 }

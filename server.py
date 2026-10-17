@@ -205,6 +205,9 @@ def build_start(battery, cells, mode, charge_ma, discharge_ma, machine_id=""):
     return [0x0F, 3 + len(body)] + head + body + [sum(head + body) & 0xFF, 0xFF, 0xFF]
 
 
+IDLE_MAIN_OFFSET_V = 1.5  # idle (0x5A) main-lead reading sits ~0.7-0.8 V above the balance total
+
+
 def detect_cells(s, battery=None):
     """Work out a lithium pack's cell count from the balance lead, cross-checked with pack voltage.
 
@@ -229,11 +232,15 @@ def detect_cells(s, battery=None):
         fits = [o["name"] for o in BATTERIES.values() if high <= o["max_mv"] / 1000 + 0.05]
         hint = f" If this pack really is {fits[0]}, choose {fits[0]}." if battery and fits else ""
         return None, f"Highest cell is {high:.3f} V, above a {b['name']}'s {b['max_mv'] / 1000:.2f} V full charge.{hint}"
-    if s["pack_v"] < 1.0:
+    main = s.get("main_v", s["pack_v"])
+    if main < 1.0:
         return None, "No voltage on the main leads. Connect the pack's main lead as well."
     total = sum(taps[:n])
-    if abs(s["pack_v"] - total) > max(0.3, total * 0.03):
-        return None, (f"Main lead reads {s['pack_v']:.2f} V but the balance lead adds up to {total:.2f} V. "
+    # When idle (main_v set), the main lead reads up to IDLE_MAIN_OFFSET_V high. A missing or extra
+    # cell still shows as a 3 V+ gap.
+    above = IDLE_MAIN_OFFSET_V if "main_v" in s else max(0.3, total * 0.03)
+    if not -max(0.3, total * 0.03) <= main - total <= above:
+        return None, (f"Main lead reads {main:.2f} V but the balance lead adds up to {total:.2f} V. "
                       "Check both plugs are on the same pack.")
     return n, None
 
@@ -365,7 +372,12 @@ class Connection:
             volts = decode_idle_voltages(r) if r else None
             if not volts:
                 return None  # no trustworthy voltages this round; keep the last good reading
-            sample["pack_v"], sample["cells_v"] = volts
+            # The idle main-lead reading runs ~0.7 V high, so show the balance total when there is
+            # one and keep the raw figure as main_v for detect_cells' cross-check.
+            main_v, sample["cells_v"] = volts
+            taps = [v for v in sample["cells_v"] if v > 1.0]
+            sample["main_v"] = main_v
+            sample["pack_v"] = round(sum(taps), 3) if taps else main_v
         if sample:
             r = self._query(dev, CMD_PROGRAM)
             sample["program"] = decode_program(r, self.machine_id) if r else None
@@ -457,8 +469,11 @@ class Charger:
                 "history": self.history[since:] if 0 <= since <= len(self.history) else self.history,
             }
 
-    def start(self, battery, mode, current_a):
-        """Start a lithium program with the cell count detected from the pack. Returns (ok, message)."""
+    def start(self, battery, mode, current_a, expected_cells=None):
+        """Start a lithium program with the cell count detected from the pack. Returns (ok, message).
+
+        expected_cells is the count the user picked; it must match the detected count.
+        """
         if battery not in BATTERIES:
             return False, f"Unsupported battery type: {battery}"
         if mode not in ("storage", "balance"):
@@ -473,6 +488,9 @@ class Charger:
             cells, reason = detect_cells(s, battery)
         if not cells:
             return False, reason
+        if expected_cells and expected_cells != cells:
+            return False, (f"You picked {expected_cells}S but the balance lead shows {cells}S. "
+                           "Check the pack's label and that the balance plug is fully seated.")
         if not 0.1 <= current_a <= MAX_CHARGE_A:
             return False, f"Current must be between 0.1 and {MAX_CHARGE_A:.1f} A."
         charge_ma = round(current_a * 10) * 100
@@ -966,7 +984,11 @@ class Handler(BaseHTTPRequestHandler):
                 current = float(body.get("current_a", 0))
             except (TypeError, ValueError):
                 current = 0
-            ok, msg = charger.start(str(body.get("battery", "lipo")), str(body.get("mode", "")), current)
+            try:
+                cells = int(body.get("cells") or 0)
+            except (TypeError, ValueError):
+                cells = 0
+            ok, msg = charger.start(str(body.get("battery", "lipo")), str(body.get("mode", "")), current, cells)
             return self._json({"ok": ok, "message": msg}, 200 if ok else 400)
         if path == "/api/stop":
             ok, msg = charger.stop()

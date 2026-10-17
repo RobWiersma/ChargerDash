@@ -3,6 +3,24 @@
 Live local dashboard for one or more **SkyRC iMAX B6AC v2** chargers, read over USB.
 Click a charger's name to rename it.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/charging-dark.png">
+  <img src="screenshots/charging.png" alt="ChargerDash showing a 4S LiPo balance charge: pack voltage, current, per-cell voltages and live charts">
+</picture>
+
+<details>
+<summary>More screenshots</summary>
+
+**All chargers:** every charger side by side.
+
+![All chargers overview](screenshots/all-chargers.png)
+
+**Phone:** open the address in the header from a phone on the same WiFi.
+
+<img src="screenshots/phone.png" width="300" alt="ChargerDash on a phone">
+
+</details>
+
 ## Download and run
 
 1. Download **ChargerDash.exe** from the [Releases](../../releases) page and double-click it. Nothing to install.
@@ -22,7 +40,8 @@ catch fire: never leave a charge unattended, and charge on a fireproof surface o
 **Start…** runs a balance charge or storage for LiPo, LiIon or LiHV. The cell count is detected
 from the balance lead and cross-checked against the main-lead voltage. It refuses to start if the
 balance lead is missing or has a gap, if any cell is below 3.00 V or above the chosen type's full
-charge, or if the two leads disagree. **Stop** ends the running program.
+charge, or if the two leads disagree. The **Cells** picker (1S–6S) starts at the detected count;
+if you set it to something else, Start stays off until the two agree. **Stop** ends the running program.
 
 Each panel shows pack health warnings: cell imbalance (30 / 100 / 200 mV), a cell drifting
 away from the rest during a program, low (< 3.30 V) or over-discharged (< 3.00 V) cells, cells
