@@ -9,6 +9,7 @@ it's plugged into. Keep each charger on the same port and it keeps its name.
 import argparse
 import csv
 import hashlib
+import io
 import json
 import os
 import queue
@@ -24,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import hid
+import segno
 
 VID, PID = 0x0000, 0x0001
 CMD_STATUS, CMD_SYSTEM, CMD_PROGRAM, CMD_MACHINE_ID, CMD_STOP = 0x55, 0x5A, 0x5F, 0x57, 0xFE
@@ -148,9 +150,11 @@ def decode(p):
 
 
 def decode_idle_voltages(p):
-    """Pack and cell voltages from a 0x5A (system) reply, which stays live when idle.
+    """(Input voltage, cell voltages) from a 0x5A (system) reply, which stays live when idle.
 
-    0F 25 5A 00 | settings (14 bytes) | Vpack at 18 | 6 cells from 20 | ...
+    0F 25 5A 00 | settings (14 bytes) | V at 18 | 6 cells from 20 | ...
+    The value at 18 stays at 15-16 V whatever pack is connected (4S or 6S), so it's most likely the
+    charger's DC input, not the main lead. The main lead isn't reported while idle.
     """
     if len(p) < 32 or p[1] != 0x25 or not valid_reply(p, CMD_SYSTEM):
         return None
@@ -205,15 +209,90 @@ def build_start(battery, cells, mode, charge_ma, discharge_ma, machine_id=""):
     return [0x0F, 3 + len(body)] + head + body + [sum(head + body) & 0xFF, 0xFF, 0xFF]
 
 
-IDLE_MAIN_OFFSET_V = 1.5  # idle (0x5A) main-lead reading sits ~0.7-0.8 V above the balance total
+IR_REST_SAMPLES = 3    # resting readings averaged before current starts (at least 2 needed)
+IR_SETTLE_SECS = 15    # wait this long after current starts before measuring
+IR_MIN_A = 0.5         # below this the voltage step is too small to measure
+IR_REST_A = 0.05      # at or below this the pack is resting; above it current has started
+IR_START_WITHIN_SECS = 30  # current starts this soon into a program (after the charger's ~10 s check)
+IR_HOLD_DROP = 0.7    # current falling below this × its peak right away = charger holding full voltage
+IR_NOTE_LATE = "program started before the app was open"
+
+
+def internal_resistance(history):
+    """Per-cell DC internal resistance from the step when a program's current starts.
+
+    The charger checks the pack for ~10 s at 0 A first. Each cell's voltage change from rest to the
+    first reading at 90% of the settled current, divided by that current, is its resistance. It's
+    read through the balance lead about a second after the step, so it includes plug contact and a
+    little polarisation: good for comparing cells and packs over time, not lab-grade.
+    Returns {"amps", "cells_mohm", "pack_mohm"}; {"note"} saying why it can't be measured; None when
+    there are no resting readings (the app joined mid-program); or False if it's too early to tell.
+    """
+    start = next((i for i, r in enumerate(history) if r["current_a"] > IR_REST_A), None)
+    if start is None or history[-1]["secs"] < history[start]["secs"] + IR_SETTLE_SECS:
+        return False
+    # The step must be the program's own start (in its first seconds), not a dip in a tapering
+    # current partway through, which is what joining mid-program can look like.
+    if history[start]["secs"] > IR_START_WITHIN_SECS:
+        return None
+    rest = [r for r in history[max(0, start - IR_REST_SAMPLES):start] if r["cells_v"]]
+    if len(rest) < 2:
+        return {"note": "no resting readings before current started"}
+    settled = [r for r in history[start:] if r["secs"] <= history[start]["secs"] + IR_SETTLE_SECS]
+    peak = max(r["current_a"] for r in settled)
+    load = next(r for r in settled if r["current_a"] >= 0.9 * peak)
+    n = sum(1 for v in rest[-1]["cells_v"] if v > 1.0)
+    if n == 0:
+        return {"note": "no balance lead"}
+    if settled[-1]["current_a"] < IR_HOLD_DROP * peak:
+        # A pack (nearly) at the program's target (full, or storage voltage): the charger goes
+        # straight to holding that voltage, so the step shows the charger's limit, not the pack.
+        return {"note": "pack already at its target voltage, can't measure"}
+    if load["current_a"] < IR_MIN_A:
+        return {"note": f"current under {IR_MIN_A:.1f} A, too low to measure"}
+    cells = [round(abs(load["cells_v"][k] - sum(r["cells_v"][k] for r in rest) / len(rest))
+                   / load["current_a"] * 1000, 1) for k in range(n)]
+    return {"amps": load["current_a"], "cells_mohm": cells, "pack_mohm": round(sum(cells), 1)}
+
+
+def ir_from_logs(session_start):
+    """Internal resistance from the CSV log that recorded this program's start, if any.
+
+    Used when the app joined a program partway through (e.g. it was restarted): the log written
+    by the earlier run still has the resting readings from before current started.
+    """
+    try:   # newest first; the program's own logs are among the last few written
+        paths = sorted((os.path.join(LOG_DIR, n) for n in os.listdir(LOG_DIR) if n.endswith(".csv")),
+                       key=os.path.getmtime, reverse=True)[:40]
+    except OSError:
+        return None
+    for path in paths:
+        try:
+            with open(path, newline="") as f:
+                rows = []
+                for r in csv.DictReader(f):
+                    rows.append({"secs": int(r["secs"]), "current_a": float(r["current_a"]),
+                                 "cells_v": [float(r[f"cell{i}"]) for i in range(1, 7)],
+                                 "t": datetime.fromisoformat(r["time"]).timestamp()})
+                    if len(rows) >= 60:
+                        break
+        except (OSError, KeyError, ValueError):
+            continue
+        if rows and abs(rows[0]["t"] - rows[0]["secs"] - session_start) < 15:
+            ir = internal_resistance(rows)
+            if ir:
+                return ir   # else it's a log that also joined mid-program; keep looking
+    return None
 
 
 def detect_cells(s, battery=None):
-    """Work out a lithium pack's cell count from the balance lead, cross-checked with pack voltage.
+    """Work out a lithium pack's cell count from the balance lead.
 
-    Returns (cells, None) or (None, reason). Pack voltage alone is ambiguous (20 V could be a
-    full 5S or a flat 6S), so a balance lead is required. With a battery type, cells above that
-    type's full voltage are refused; without one, anything up to a full LiHV passes.
+    Returns (cells, None) or (None, reason). A balance lead is required. With a battery type, cells
+    above that type's full voltage are refused; without one, anything up to a full LiHV passes.
+    The main lead can't be checked here: the charger doesn't report it while idle. It checks the
+    cell count against the main lead itself when a program starts (error 15, cell number
+    incorrect), and the dashboard warns if the two disagree while running.
     """
     if not s:
         return None, "No reading from the charger yet."
@@ -232,16 +311,6 @@ def detect_cells(s, battery=None):
         fits = [o["name"] for o in BATTERIES.values() if high <= o["max_mv"] / 1000 + 0.05]
         hint = f" If this pack really is {fits[0]}, choose {fits[0]}." if battery and fits else ""
         return None, f"Highest cell is {high:.3f} V, above a {b['name']}'s {b['max_mv'] / 1000:.2f} V full charge.{hint}"
-    main = s.get("main_v", s["pack_v"])
-    if main < 1.0:
-        return None, "No voltage on the main leads. Connect the pack's main lead as well."
-    total = sum(taps[:n])
-    # When idle (main_v set), the main lead reads up to IDLE_MAIN_OFFSET_V high. A missing or extra
-    # cell still shows as a 3 V+ gap.
-    above = IDLE_MAIN_OFFSET_V if "main_v" in s else max(0.3, total * 0.03)
-    if not -max(0.3, total * 0.03) <= main - total <= above:
-        return None, (f"Main lead reads {main:.2f} V but the balance lead adds up to {total:.2f} V. "
-                      "Check both plugs are on the same pack.")
     return n, None
 
 
@@ -364,20 +433,22 @@ class Connection:
         self._polls += 1
         r = self._query(dev, CMD_STATUS)
         sample = decode(r) if r else None
-        if sample and (sample["pack_v"] is None or self._polls % TAG_CHECK_POLLS == 0):
+        # Not running (idle, finished or stopped with an error): the status reply's voltages are left
+        # over from the program, so read the live cell voltages from the system reply instead.
+        resting = sample and not sample["running"]
+        if sample and (resting or self._polls % TAG_CHECK_POLLS == 0):
             r = self._query(dev, CMD_SYSTEM)
             if r and r[1] == 0x25 and valid_reply(r, CMD_SYSTEM):
                 self._update_tag(decode_tag(r))
-        if sample and sample["pack_v"] is None:
+        if resting:
             volts = decode_idle_voltages(r) if r else None
-            if not volts:
+            if not volts and sample["pack_v"] is None:
                 return None  # no trustworthy voltages this round; keep the last good reading
-            # The idle main-lead reading runs ~0.7 V high, so show the balance total when there is
-            # one and keep the raw figure as main_v for detect_cells' cross-check.
-            main_v, sample["cells_v"] = volts
+        if resting and volts:
+            # No main-lead reading while idle: the pack voltage is the balance-lead total, if any.
+            sample["input_v"], sample["cells_v"] = volts
             taps = [v for v in sample["cells_v"] if v > 1.0]
-            sample["main_v"] = main_v
-            sample["pack_v"] = round(sum(taps), 3) if taps else main_v
+            sample["pack_v"] = round(sum(taps), 3) if taps else None
         if sample:
             r = self._query(dev, CMD_PROGRAM)
             sample["program"] = decode_program(r, self.machine_id) if r else None
@@ -428,6 +499,7 @@ class Charger:
         self.prefs = dict(DEFAULT_PREFS)
         self.peak_a = 0.0          # highest current in the running program, for the time-left estimate
         self.session_start = None  # wall-clock time the running program started
+        self.ir = False            # internal resistance of the running program's pack (see internal_resistance)
 
     @property
     def connected(self):
@@ -436,14 +508,14 @@ class Charger:
     def save_state(self):
         with self.lock:
             self._saved = (self.latest, list(self.history), self.session_id, self.session_start,
-                           self.peak_a, self.last_seen)
+                           self.peak_a, self.last_seen, self.ir)
 
     def restore_state(self):
         """Put back the state from before a guessed connection. Caller holds self.lock."""
         saved = getattr(self, "_saved", None)
         if saved:
             (self.latest, self.history, self.session_id, self.session_start,
-             self.peak_a, self.last_seen) = saved
+             self.peak_a, self.last_seen, self.ir) = saved
             self.session_id += 1   # tell pages to reload this charger's history
             self._saved = None
 
@@ -465,6 +537,7 @@ class Charger:
                 "latest": self.latest,
                 "session": self.session_id,
                 "log": os.path.relpath(self.log_path, DATA_DIR) if self.log_path else None,
+                "ir": self.ir or None,
                 "next": len(self.history),
                 "history": self.history[since:] if 0 <= since <= len(self.history) else self.history,
             }
@@ -527,9 +600,17 @@ class Charger:
                 self.session_start = s["t"] - s["secs"]
                 # If the app restarted mid-program, pick up the peak current seen before.
                 self.peak_a = fleet.saved_peak(self.id, self.session_start)
+                saved = fleet.saved_ir(self.id, self.session_start)   # notes are worked out again
+                self.ir = saved if saved and saved.get("cells_mohm") else False
             if s["running"]:
                 self.history.append(s)
                 del self.history[:-MAX_HISTORY]
+                if self.ir is False:
+                    self.ir = internal_resistance(self.history)
+                    if self.ir is None:   # joined mid-program: the start may be in an earlier log
+                        self.ir = ir_from_logs(self.session_start) or {"note": IR_NOTE_LATE}
+                    if self.ir:
+                        fleet.save_ir(self.id, self.session_start, self.ir)
                 if s["secs"] >= PEAK_SKIP_SECS and s["current_a"] > self.peak_a + 0.02:
                     self.peak_a = s["current_a"]
                     fleet.save_peak(self.id, self.session_start, self.peak_a)
@@ -847,7 +928,24 @@ class Fleet:
 
     def save_peak(self, cid, start, peak_a):
         with self.lock:
-            self._app().setdefault("peaks", {})[cid] = {"start": round(start), "peak_a": round(peak_a, 3)}
+            p = self._app().setdefault("peaks", {}).get(cid) or {}
+            keep = {"ir": p["ir"]} if "ir" in p and abs(p.get("start", 0) - start) < 15 else {}
+            self._app()["peaks"][cid] = {"start": round(start), "peak_a": round(peak_a, 3), **keep}
+            save_json(SETTINGS_FILE, self.settings)
+
+    def saved_ir(self, cid, start):
+        """Internal resistance saved for this charger's program, if it's the same program (same start)."""
+        with self.lock:
+            p = self._app().get("peaks", {}).get(cid)
+            return p.get("ir") if p and abs(p.get("start", 0) - start) < 15 else None
+
+    def save_ir(self, cid, start, ir):
+        with self.lock:
+            p = self._app().setdefault("peaks", {}).get(cid) or {}
+            if abs(p.get("start", 0) - start) >= 15:
+                p = {"start": round(start), "peak_a": 0.0}
+            p["ir"] = ir
+            self._app()["peaks"][cid] = p
             save_json(SETTINGS_FILE, self.settings)
 
     def record_finish(self, program, end_a, peak_a, taper_v=None, tail_secs=None):
@@ -933,12 +1031,22 @@ class Handler(BaseHTTPRequestHandler):
                     since[cid] = int(n)
             self._json(fleet.snapshot(since))
         elif url.path == "/api/info":
-            port = self.server.server_address[1]
-            lan = self.server.server_address[0] == "0.0.0.0"
-            self._json({"local": self._is_local(), "phone_url": f"http://{lan_ip()}:{port}" if lan else None,
+            self._json({"local": self._is_local(), "phone_url": self._phone_url(),
                         "data_dir": DATA_DIR if self._is_local() else None})
+        elif url.path == "/api/phone-qr.svg" and self._is_local() and self._phone_url():
+            # The phone address as a QR code, so a phone's camera can open it. Black on white
+            # whatever the theme: that's what phone cameras read most reliably.
+            buf = io.BytesIO()
+            segno.make(self._phone_url(), error="m").save(buf, kind="svg", scale=8, border=3,
+                                                          dark="#000", light="#fff", xmldecl=False)
+            self._send(200, "image/svg+xml", buf.getvalue())
         else:
             self._send(404, "text/plain", b"not found")
+
+    def _phone_url(self):
+        """Address for phones on the same network, or None when only listening on this PC."""
+        host, port = self.server.server_address[:2]
+        return f"http://{lan_ip()}:{port}" if host == "0.0.0.0" else None
 
     def _is_local(self):
         return self.client_address[0] in ("127.0.0.1", "::1")

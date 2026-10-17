@@ -95,6 +95,17 @@
   }
   .scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin: 6px 0 0 62px; padding-right: 176px; font-variant-numeric: tabular-nums; }
   @media (max-width: 480px) { .scale { display: none; } }
+  /* Internal resistance column, shown once a program has measured it */
+  .cells.with-ir .cell { grid-template-columns: 52px 1fr 64px 92px 60px; }
+  .scale.with-ir { padding-right: 246px; }
+  .grid2:has(.cells.with-ir) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  @media (max-width: 760px) { .grid2:has(.cells.with-ir) { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 480px) {   /* phones: no room for the dot track next to the resistance column */
+    .cells.with-ir:not(.compact) .cell { grid-template-columns: 48px 1fr 92px 52px; gap: 8px; }
+    .cells.with-ir:not(.compact) .track { display: none; }
+  }
+  .cell .r { text-align: right; color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+  .cell .r.hi { color: var(--critical); font-weight: 600; }
 
   .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
   @media (max-width: 760px) { .charts { grid-template-columns: minmax(0, 1fr); } }
@@ -159,7 +170,19 @@
     background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
     box-shadow: 0 16px 48px rgba(0,0,0,.35);
   }
-  #help::backdrop { background: rgba(0,0,0,.5); }
+  #help::backdrop, #qr::backdrop { background: rgba(0,0,0,.5); }
+  /* Phone address: opens a QR code to scan */
+  #phone { background: none; border: 0; padding: 4px 6px; border-radius: 6px; color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer; }
+  #phone:hover { background: var(--grid); color: var(--ink); }
+  #qr {
+    width: min(340px, calc(100vw - 32px)); padding: 20px; text-align: center;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  }
+  #qr h2 { margin: 0 0 14px; font-size: 17px; }
+  #qr img { width: 240px; height: 240px; max-width: 100%; border-radius: 8px; display: block; margin: 0 auto; }
+  #qr .url { font-weight: 600; margin: 12px 0 4px; user-select: all; }
+  #qr p { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
   .help-head {
     position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -190,8 +213,24 @@
   .tab-close:hover { color: var(--ink); }
 
   /* All-chargers overview: one compact card per charger, side by side */
-  .overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
-  .ov-card { display: grid; gap: 12px; align-content: start; }
+  /* One wide card per charger: summary on the left, cells on the right */
+  .overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ov-card {
+    display: grid; gap: 12px 28px; align-content: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    grid-template-areas: "head head" "stats cells" "warn cells" "actions cells";
+    grid-template-rows: auto auto 1fr auto;
+  }
+  .ov-head { grid-area: head; }
+  .ov-stats { grid-area: stats; }
+  .ov-cells { grid-area: cells; }
+  .ov-warn { grid-area: warn; }
+  .ov-actions { grid-area: actions; }
+  @media (max-width: 760px) {
+    .ov-card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "stats" "cells" "warn" "actions"; grid-template-rows: none; }
+  }
+  .cells.compact.with-ir .cell { grid-template-columns: 14px 1fr 70px 88px 56px; }
+  .scale.compact.with-ir { padding-right: 238px; }
   .ov-card[data-state="off"] { opacity: .7; }
   .ov-head { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
   .ov-head svg { width: 16px; height: 16px; }
@@ -267,12 +306,20 @@
     <h1>ChargerDash</h1>
     <span class="sub">for SkyRC iMAX B6AC v2</span>
     <span class="spacer"></span>
-    <span class="sub" id="phone" hidden></span>
+    <button id="phone" type="button" hidden aria-haspopup="dialog" title="Show a QR code to open this on your phone"></button>
     <button class="btn" id="logging" type="button" title="Save each charge to a CSV file"></button>
     <button class="btn" id="logs" type="button" hidden>Logs folder</button>
     <button class="btn" id="sound" type="button" title="Play a sound when a program finishes or stops with an error"></button>
     <button class="btn" id="help-btn" type="button" aria-haspopup="dialog">❔ Help</button>
   </header>
+
+  <dialog id="qr" aria-labelledby="qr-title">
+    <h2 id="qr-title">Open on your phone</h2>
+    <img alt="QR code for the phone address">
+    <div class="url"></div>
+    <p>Phone on the same WiFi as this PC: point its camera at the code.</p>
+    <button class="btn" type="button" id="qr-close">Close</button>
+  </dialog>
 
   <dialog id="help" aria-labelledby="help-title">
     <div class="help-head">
@@ -307,11 +354,12 @@
         <ul>
           <li><b>Start…</b> opens the program form: battery type (LiPo, LiIon, LiHV), Balance charge or Storage, and
             the current (0.5 / 1.0 / 1.5 / 2.0 A or your own). Your last choices are remembered per charger.</li>
-          <li>The cell count is <b>detected from the balance lead</b> and checked against the main lead. The button
+          <li>The cell count is <b>detected from the balance lead</b>. The charger checks it against the main lead
+            itself as the program starts, and the dashboard warns if they disagree while it runs. The button
             says exactly what will run, e.g. <i>Start 6S LiPo storage at 1.0 A</i>. Plug in both the balance and the
             main lead. <b>Cells</b> starts at the detected count; set it to what the pack's label says. If the two
             disagree, Start stays off until you check the pack and the balance plug.</li>
-          <li>It refuses to start if a lead is missing, the two leads disagree, a cell is below 3.00 V, or a cell is
+          <li>It refuses to start if the balance lead is missing or has a gap, a cell is below 3.00 V, or a cell is
             above that battery type's full charge.</li>
           <li><b>LiHV</b> charges to 4.35 V per cell. Only choose it for packs marked HV.</li>
           <li><b>Stop</b> ends the running program. Programs started on the charger's own buttons show up here too.</li>
@@ -325,6 +373,10 @@
             for its full tab with charts.</li>
           <li><b>Cells</b>: each dot is a cell, the line is the pack average, and the mV figure is how far that cell is
             from it. The spread is the gap between the highest and lowest cell.</li>
+          <li><b>Internal resistance</b> is measured from how far each cell's voltage jumps when charge current
+            starts, so it needs the app open when the program starts. It includes the balance plug's contact,
+            so it's best for comparing cells and tracking a pack over time. One cell far above the others
+            usually means a weak cell or a poor balance contact.</li>
           <li><b>Warnings</b> appear as a chip in the charger's header (click it for details) and as markers on the
             cells: imbalance (30 / 100 / 200 mV), a cell drifting from the rest, low or over-discharged cells, cells
             over full charge, leads that disagree, and a hot charger.</li>
@@ -348,7 +400,8 @@
         <ul>
           <li><b>Logging</b> saves each program to a CSV file (one reading per second). <b>Logs folder</b> opens them.
             Names, settings and logs live in <i>Documents\ChargerDash</i>.</li>
-          <li><b>Phone</b>: open the address shown in the header on a phone on the same Wi-Fi. If Windows Firewall
+          <li><b>Phone</b>: click the 📱 address in the header for a QR code, and scan it with a phone on the same
+            Wi-Fi (or type the address). If Windows Firewall
             asks, allow private networks.</li>
           <li><b>Sound</b> plays a chime when a program finishes and a warning tone if it stops with an error. Keep the
             app open (minimised is fine) while charging.</li>
@@ -794,7 +847,8 @@ function renderOverview(list = lastList) {
     const stat = (label, value, sub = "") =>
       `<div class="ov-stat"><div class="label">${label}</div><div class="value">${value}</div><div class="tile-sub">${sub}</div></div>`;
     const { items, cells: marked } = st.connected ? healthCheck(c, s) : { items: [], cells: new Map() };
-    const bal = cellBalance(s, marked, true);
+    const ir = st.connected ? st.ir || null : null, irCols = !!(ir && ir.cells_mohm) ? " with-ir" : "";
+    const bal = cellBalance(s, marked, true, ir);
     const worst = items[0];
     const warn = !st.connected ? `<span class="muted">Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}</span>`
       : worst ? `<span class="hw ${worst.level}">${HEALTH_ICONS[worst.level]}<span>${esc(worst.text)}${items.length > 1 ? ` <b>+${items.length - 1} more</b>` : ""}</span></span>`
@@ -807,14 +861,14 @@ function renderOverview(list = lastList) {
         <span class="spacer"></span>${prog}
       </header>
       <div class="ov-stats">
-        ${stat("Pack", s ? unit(s.pack_v.toFixed(2), "V") : "–")}
+        ${stat("Pack", s && s.pack_v != null ? unit(s.pack_v.toFixed(2), "V") : "–")}
         ${stat("Current", s ? unit(s.current_a.toFixed(2), "A") : "–")}
         ${stat("Charged", run ? unit(s.mah, "mAh") : "–", run ? fmtTime(s.secs) : "")}
         ${stat("Time left", st.connected && c.eta ? c.eta.html : "–", st.connected && c.eta ? c.eta.sub : "")}
       </div>
       <div class="ov-cells">
         <span class="label">Cells${bal ? ` · ${bal.spread}` : ""}</span>
-        ${bal ? `<div class="cells compact">${bal.rows}</div><div class="scale compact">${bal.scale}</div>`
+        ${bal ? `<div class="cells compact${irCols}">${bal.rows}</div><div class="scale compact${irCols}">${bal.scale}</div>`
               : `<div class="muted ov-nolead">No balance lead</div>`}
       </div>
       <div class="ov-warn">${warn}</div>
@@ -944,8 +998,7 @@ const HEALTH = {
   spreadGrowth: 0.030,                                              // V the spread widened during a program
   driftSettleSecs: 60, driftWindowSecs: 300,                        // baseline after settling, then watch this long
   lowWarn: 3.30, lowCritical: 3.00,                                 // V per cell
-  leadMismatch: 0.03,                                               // fraction main lead vs balance sum
-  idleMainOffset: 1.5,                                              // V the idle main lead may read above it
+  leadMismatch: 0.03,                                               // fraction main lead vs balance sum  irRatio: 2, irExtra: 20,                                          // cell resistance this × and this many mΩ above the others
   tempWarn: 55, tempCritical: 65,                                   // °C charger internal
 };
 const FULL_V = { LiPo: 4.20, LiIon: 4.10, LiHV: 4.35, LiFe: 3.60 };
@@ -1004,11 +1057,17 @@ function healthCheck(c, s) {
     over.forEach(x => mark(x.i, "critical"));
 
     const total = vs.reduce((a, b) => a + b, 0);
-    // Idle readings carry the raw main lead as main_v, which runs up to HEALTH.idleMainOffset high.
-    const main = s.main_v ?? s.pack_v, diff = main - total;
-    const above = s.main_v != null ? HEALTH.idleMainOffset : total * HEALTH.leadMismatch;
-    if (main > 1 && (diff > above || -diff > total * HEALTH.leadMismatch))
-      add("serious", `Main lead reads ${main.toFixed(2)} V but the cells add up to ${total.toFixed(2)} V. Check both plugs are seated and on the same pack.`);
+    // The charger only reports the main lead while a program runs.
+    if (s.running && s.pack_v > 1 && Math.abs(s.pack_v - total) > total * HEALTH.leadMismatch)
+      add("serious", `Main lead reads ${s.pack_v.toFixed(2)} V but the cells add up to ${total.toFixed(2)} V. Check both plugs are seated and on the same pack.`);
+
+    const ir = c.st && c.st.ir;
+    if (ir) irOutliers(ir).forEach((med, i) => {
+      const r = ir.cells_mohm[i];
+      add("serious", `Cell ${i + 1} has high internal resistance: ${Math.round(r)} mΩ, about ${Math.round(r / med)}× the others (${Math.round(med)} mΩ). ` +
+        `It may be a weak or damaged cell, or a poor balance-plug contact. Check the pack for puffing.`);
+      mark(i, "serious");
+    });
   }
 
   if (s.temp_c != null) {
@@ -1184,7 +1243,7 @@ function renderEta(c, s) {
 
 function renderTiles(c, s) {
   const run = s && (s.running || s.done);
-  c.q(".t-v").innerHTML = s ? unit(s.pack_v.toFixed(2), "V") : "–";
+  c.q(".t-v").innerHTML = s && s.pack_v != null ? unit(s.pack_v.toFixed(2), "V") : "–";
   c.q(".t-a").innerHTML = s ? unit(s.current_a.toFixed(2), "A") : "–";
   c.q(".t-mah").innerHTML = run ? unit(s.mah, "mAh") : "–";
   c.q(".t-time").textContent = run ? fmtTime(s.secs) : "–";
@@ -1193,9 +1252,16 @@ function renderTiles(c, s) {
 
 // The cell balance view: each cell as a dot on a shared scale around the pack average. Used by
 // a charger's tab and by its card in the overview. Returns null when there's no balance lead.
-function cellBalance(s, marked = new Map(), short = false) {
+// With ir (a program's internal resistance), each row also shows that cell's resistance;
+// an ir with only a note (why it couldn't be measured) shows that note in the title instead.
+function cellBalance(s, marked = new Map(), short = false, ir = null) {
   const cells = s && s.cells_v ? s.cells_v.map((v, i) => ({ i, v })).filter(x => x.v > 1) : [];
   if (!cells.length) return null;
+  const note = ir && ir.note;
+  if (ir && !ir.cells_mohm) ir = null;
+  const out = ir ? irOutliers(ir) : new Map();
+  const res = i => !ir ? "" : ir.cells_mohm[i] == null ? `<span class="r"></span>`
+    : `<span class="r${out.has(i) ? " hi" : ""}" title="Internal resistance, measured as this program started">${Math.round(ir.cells_mohm[i])} mΩ</span>`;
   const vs = cells.map(x => x.v), min = Math.min(...vs), max = Math.max(...vs);
   const avg = vs.reduce((a, b) => a + b, 0) / vs.length;
   const half = Math.max(0.03, (max - min) / 2 + 0.01), mid = (max + min) / 2;
@@ -1205,20 +1271,36 @@ function cellBalance(s, marked = new Map(), short = false) {
     const tag = cells.length > 1 && x.v === min ? " · low" : cells.length > 1 && x.v === max ? " · high" : "";
     return `<div class="cell"><span class="name">${short ? x.i + 1 : `Cell ${x.i + 1}`}</span>
       <div class="track"><span class="avg" style="left:${P(avg)}%"></span><span class="dot" style="left:${P(x.v)}%"></span></div>
-      <span class="v">${marked.has(x.i) ? `<span class="flag" title="${HEALTH_LABELS[marked.get(x.i)]}">${HEALTH_ICONS[marked.get(x.i)]}</span>` : ""}${x.v.toFixed(3)} V</span><span class="d">${d > 0 ? "+" : ""}${d} mV${tag}</span></div>`;
+      <span class="v">${marked.has(x.i) ? `<span class="flag" title="${HEALTH_LABELS[marked.get(x.i)]}">${HEALTH_ICONS[marked.get(x.i)]}</span>` : ""}${x.v.toFixed(3)} V</span><span class="d">${d > 0 ? "+" : ""}${d} mV${tag}</span>${res(x.i)}</div>`;
   }).join("");
   return {
     rows,
-    spread: `${cells.length}S · spread ${Math.round((max - min) * 1000)} mV`,
+    spread: `${cells.length}S · spread ${Math.round((max - min) * 1000)} mV` +
+      (ir ? ` · resistance at ${ir.amps.toFixed(1)} A: pack ${Math.round(ir.pack_mohm)} mΩ` : note ? ` · resistance: ${note}` : ""),
     scale: `<span>${lo.toFixed(3)}</span><span>avg ${avg.toFixed(3)}</span><span>${hi.toFixed(3)}</span>`,
   };
 }
 
 function renderCells(c, s, marked = new Map()) {
-  const b = cellBalance(s, marked);
+  const ir = (c.st && c.st.ir) || null, cols = !!(ir && ir.cells_mohm);
+  const b = cellBalance(s, marked, false, ir);
   c.q(".cells").innerHTML = b ? b.rows : '<div class="empty" style="padding:20px 0">No balance lead connected</div>';
+  c.q(".cells").classList.toggle("with-ir", !!(b && cols));
+  c.q(".scale").classList.toggle("with-ir", !!(b && cols));
   c.q(".scale").innerHTML = b ? b.scale : "";
   c.q(".spread").textContent = b ? b.spread : "";
+}
+
+// Cells whose resistance stands well above the others' median (a weak cell or a poor balance contact).
+function irOutliers(ir) {
+  const out = new Map(), rs = ir.cells_mohm;
+  if (!rs || rs.length < 2) return out;
+  rs.forEach((r, i) => {
+    const others = rs.filter((_, k) => k !== i).sort((a, b) => a - b);
+    const med = others[Math.floor((others.length - 1) / 2)];
+    if (r > med * HEALTH.irRatio && r - med > HEALTH.irExtra) out.set(i, med);
+  });
+  return out;
 }
 
 function cellCount(c) {
@@ -1334,6 +1416,8 @@ async function tick() {
 $("help-btn").addEventListener("click", () => $("help").showModal());
 $("help-close").addEventListener("click", () => $("help").close());
 $("help").addEventListener("click", ev => { if (ev.target === $("help")) $("help").close(); });   // backdrop
+$("qr-close").addEventListener("click", () => $("qr").close());
+$("qr").addEventListener("click", ev => { if (ev.target === $("qr")) $("qr").close(); });
 try {
   if (!localStorage.getItem("help-seen")) {
     localStorage.setItem("help-seen", "1");
@@ -1359,7 +1443,13 @@ fetch("/api/info").then(r => r.json()).then(info => {
   if (!info.local) return;
   if (info.phone_url) {
     $("phone").hidden = false;
-    $("phone").textContent = `Phone: ${info.phone_url}`;
+    $("phone").textContent = `📱 Phone: ${info.phone_url}`;
+    $("phone").addEventListener("click", () => {
+      const qr = $("qr");
+      qr.querySelector("img").src = "/api/phone-qr.svg";
+      qr.querySelector(".url").textContent = info.phone_url;
+      qr.showModal();
+    });
   }
   $("logs").hidden = false;
   $("logs").title = `Open ${info.data_dir}\\logs`;
