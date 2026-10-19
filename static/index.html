@@ -132,6 +132,9 @@
   th { color: var(--ink-2); font-weight: 600; }
   .table-wrap { overflow-x: auto; }
   .banner { margin-bottom: 12px; color: var(--ink-2); }
+  .banner.lost { color: var(--ink); font-weight: 600; border: 2px solid var(--critical);
+    background: color-mix(in srgb, var(--critical) 14%, var(--surface)); }
+  .banner.lost .btn { margin-left: 8px; font-weight: 400; }
 
   .btn {
     font: inherit; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 8px; cursor: pointer;
@@ -407,6 +410,9 @@
             asks, allow private networks.</li>
           <li><b>Sound</b> plays a chime when a program finishes and a warning tone if it stops with an error. Keep the
             app open (minimised is fine) while charging.</li>
+          <li>If readings stop while a program is running, or the charger drops off USB, a loud alarm repeats even with
+            Sound off, without a break until you press <b>Silence alarm</b>: the charger may still be charging with nothing
+            watching it, so check its screen. The dashboard reconnects by itself when the charger answers again.</li>
         </ul>
       </section>
 
@@ -563,13 +569,19 @@ const ICONS = {
   grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2"/></svg>',
   off: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
 };
+ICONS.lost = ICONS.error;
 const STATUS = {
   charging: ["Running", "var(--good)"],
   done: ["Done", "var(--good)"],
   error: ["Error", "var(--critical)"],
   idle: ["Idle", "var(--ink-2)"],
   off: ["Disconnected", "var(--critical)"],
+  lost: ["No readings", "var(--critical)"],
 };
+// A running program whose readings stop for this long (or whose charger drops off USB) sets off the
+// lost-contact alarm: the charger may still be charging with nothing watching it. It sounds without a
+// break until Silence alarm is pressed, even if the readings come back.
+const STALE_SECS = 5;
 
 // ---------- sounds (synthesised, no audio files) ----------
 let soundOn = true, audio = null;
@@ -604,6 +616,15 @@ function playError() {
   if (!soundOn || !audio) return;
   for (let i = 0; i < 3; i++) { tone(440, i * 0.5, 0.18, "square", 0.12); tone(330, i * 0.5 + 0.2, 0.18, "square", 0.12); }
 }
+
+function playAlarm() {
+  // Plays even with Sound off: it means a charging pack has no one watching it. Silenced per charger.
+  unlockAudio();
+  if (!audio) return;
+  for (let i = 0; i < 4; i++) { tone(880, i * 0.3, 0.15, "square", 0.18); tone(660, i * 0.3 + 0.15, 0.15, "square", 0.18); }
+}
+// One alarm pattern lasts 1.2 s; repeat it back to back while any charger is alarming.
+setInterval(() => { if ([...chargers.values()].some(c => c.alarming)) playAlarm(); }, 1300);
 
 function renderSoundButton() {
   $("sound").textContent = soundOn ? "🔔 Sound on" : "🔕 Sound off";
@@ -746,6 +767,9 @@ function createPanel(id) {
     if (r.ok) form.hidden = true;
     updateStartForm(c);
   });
+  c.q(".err").addEventListener("click", ev => {
+    if (ev.target.closest("[data-silence]")) { c.alarming = false; c.silenced = true; renderPanel(c, c.st); }
+  });
   c.q(".btn-stop").addEventListener("click", async () => {
     c.q(".btn-stop").disabled = true;
     showMessage(c, await post("/api/stop", { id }));
@@ -852,7 +876,8 @@ function renderOverview(list = lastList) {
     const ir = st.connected ? st.ir || null : null, irCols = !!(ir && ir.cells_mohm) ? " with-ir" : "";
     const bal = cellBalance(s, marked, true, ir);
     const worst = items[0];
-    const warn = !st.connected ? `<span class="muted">Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}</span>`
+    const warn = state === "lost" || c.alarming ? `<span class="hw critical">${HEALTH_ICONS.critical}<span>Lost contact while charging. Check the charger now.</span></span>`
+      : !st.connected ? `<span class="muted">Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}</span>`
       : worst ? `<span class="hw ${worst.level}">${HEALTH_ICONS[worst.level]}<span>${esc(worst.text)}${items.length > 1 ? ` <b>+${items.length - 1} more</b>` : ""}</span></span>`
       : `<span class="muted">No warnings</span>`;
     return `<article class="card ov-card" data-state="${state}">
@@ -1332,12 +1357,15 @@ function renderTable(c) {
 
 function renderPanel(c, st) {
   const s = c.latest;
-  const state = !st.connected ? "off" : s && s.running ? "charging" : s && s.done ? "done" : s && s.error ? "error" : "idle";
+  const lost = !!(s && s.running && (!st.connected || st.age > STALE_SECS));
+  const state = lost ? "lost" : !st.connected ? "off" : s && s.running ? "charging" : s && s.done ? "done" : s && s.error ? "error" : "idle";
   // Sound only on a live transition out of Running, not when the page first loads.
   if (c.prevState === "charging" && state === "done") playDone();
   if (c.prevState === "charging" && state === "error") playError();
   c.prevState = state;
-  const prog = st.connected && s && state !== "idle" ? s.program : null;
+  if (lost && !c.silenced) c.alarming = true;
+  if (!lost && !c.alarming) c.silenced = false;   // ready for the next time contact is lost
+  const prog = st.connected && s && state !== "idle" && !lost ? s.program : null;
   c.q(".program").hidden = !prog;
   if (prog) c.q(".program").innerHTML = [prog.type, prog.mode, `${prog.cells}S`].map(esc).join('<span class="sep">·</span>');
   const [label, color] = STATUS[state];
@@ -1350,10 +1378,17 @@ function renderPanel(c, st) {
   c.q(".rename").textContent = st.name;
   c.q(".log").textContent = st.log ? `Logging to ${st.log}` : "";
   renderIdentity(c);
-  const err = !st.connected ? `Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}. Showing its last readings; plug it back in to reconnect.`
+  const err = lost ? `Lost contact with the charger while it was charging. Last reading ${st.age < 60 ? `${Math.round(st.age)} s ago` : ago(Date.now() / 1000 - st.age)}. ` +
+      "It may still be charging with nothing watching it: check the charger's screen now, and stop it or unplug the pack " +
+      `if anything looks wrong. ${st.connected ? "Reconnecting…" : "Plug the USB back in to reconnect."}`
+    : c.alarming ? "Contact with the charger was lost during a program and has come back. Check the pack and the " +
+      "charger's screen, then silence the alarm."
+    : !st.connected ? `Unplugged${st.last_seen ? " " + ago(st.last_seen) : ""}. Showing its last readings; plug it back in to reconnect.`
     : state === "error" ? `The charger stopped the program: ${s.error}.` : "";
   c.q(".err").hidden = !err;
-  c.q(".err").textContent = err;
+  c.q(".err").classList.toggle("lost", lost || !!c.alarming);
+  const errHtml = esc(err) + (c.alarming ? ` <button class="btn" type="button" data-silence="">Silence alarm</button>` : "");
+  if (c.q(".err").innerHTML !== errHtml) c.q(".err").innerHTML = errHtml;
   renderTiles(c, c.latest);
   renderEta(c, st.connected ? c.latest : null);
   renderCells(c, c.latest, renderHealth(c, c.latest, st.connected));

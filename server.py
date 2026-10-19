@@ -68,6 +68,10 @@ DEFAULT_CUTOFF_RATIOS = {"storage": 0.16, "full": 0.10}
 
 POLL_SECONDS = 1.0
 SCAN_SECONDS = 2.0
+# No valid status reply for this long: drop the USB handle and let the scan reopen it. Replugging
+# the USB lead mid-program has left a charger connected but silent, with the page frozen on its
+# last reading while the charger carried on.
+SILENT_RECONNECT_SECS = 10
 MAX_HISTORY = 6 * 3600  # one sample per second, 6 hours
 
 def documents_dir():
@@ -353,6 +357,10 @@ def decode_device_info(r):
             "firmware": f"{r[16]}.{r[17]:02d}", "hardware": r[18]}
 
 
+class ChargerSilent(Exception):
+    """The charger is still on USB but has stopped answering status queries."""
+
+
 class Connection:
     """One charger plugged in over USB: polls it on a background thread and passes readings to
     whichever Charger it's currently assigned to. Ends when the device is unplugged."""
@@ -365,6 +373,7 @@ class Connection:
         self.tag = None
         self._commands = queue.Queue()
         self._polls = 0
+        self.last_reply = time.time()   # last valid status reply, to notice a charger gone silent
 
     @property
     def machine_id(self):
@@ -387,10 +396,17 @@ class Connection:
                 first = self._read_sample(dev)
                 if first:
                     break
+            if not first and not self.machine_id:
+                # Not answering at all: don't attach (it would only ask "which charger is this?");
+                # close and let the scan try again.
+                time.sleep(SCAN_SECONDS)
+                return
             fleet.attach(self, first)
             if first:
                 self.charger._add(first)
             self._poll(dev)
+        except ChargerSilent:
+            print(f"Charger on port {self.port} stopped answering; reconnecting.", flush=True)
         except OSError:
             pass   # unplugged
         except Exception:
@@ -434,6 +450,8 @@ class Connection:
         self._polls += 1
         r = self._query(dev, CMD_STATUS)
         sample = decode(r) if r else None
+        if sample:
+            self.last_reply = time.time()
         # Not running (idle, finished or stopped with an error): the status reply's voltages are left
         # over from the program, so read the live cell voltages from the system reply instead.
         resting = sample and not sample["running"]
@@ -475,6 +493,8 @@ class Connection:
             sample = self._read_sample(dev)
             if sample and self.charger:
                 self.charger._add(sample)
+            if time.time() - self.last_reply > SILENT_RECONNECT_SECS:
+                raise ChargerSilent()
             time.sleep(max(0.0, POLL_SECONDS - (time.time() - t0)))
 
 
@@ -494,6 +514,7 @@ class Charger:
         self.history = []
         self.session_id = 0
         self.log_path = None
+        self._log_session = None   # session the log file at log_path belongs to
         self._log_file = None
         self._log = None
         self.logging = True
@@ -536,6 +557,9 @@ class Charger:
                 "last_seen": self.last_seen,
                 "error": None if self.connected else "Disconnected",
                 "latest": self.latest,
+                # Seconds since the last reading, by the server's clock: the page flags a running
+                # program whose readings have stopped coming in.
+                "age": round(time.time() - self.latest["t"], 1) if self.latest else None,
                 "session": self.session_id,
                 "log": os.path.relpath(self.log_path, DATA_DIR) if self.log_path else None,
                 "ir": self.ir or None,
@@ -644,6 +668,12 @@ class Charger:
 
     def _open_log(self):
         os.makedirs(LOG_DIR, exist_ok=True)
+        if self.log_path and self._log_session == self.session_id and os.path.exists(self.log_path):
+            # Same program after a reconnect: carry on in its log rather than starting a new one.
+            self._log_file = open(self.log_path, "a", newline="")
+            self._log = csv.writer(self._log_file)
+            return
+        self._log_session = self.session_id
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         slug = re.sub(r"[^a-z0-9]+", "-", self.name.lower()).strip("-") or self.id
         self.log_path = os.path.join(LOG_DIR, f"{slug}-{stamp}.csv")

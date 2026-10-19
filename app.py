@@ -38,6 +38,8 @@ def main():
             # Something else has the usual port; take any free one (phones then need the new address).
             port = server.start_server("0.0.0.0", 0).server_address[1]
 
+    # Let the lost-contact alarm sound even if nobody has clicked in the window since it opened.
+    os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--autoplay-policy=no-user-gesture-required")
     webview.create_window(TITLE, f"http://127.0.0.1:{port}/", width=1200, height=900, min_size=(400, 500))
     # Keep browser storage (the sound on/off choice) between runs.
     # The window icon: icon.ico when run from source; the exe's own icon (same picture) when built.

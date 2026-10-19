@@ -63,6 +63,14 @@ in a LiPo bag.
   is missing or has a gap, or if any cell is below 3.00 V or above the chosen type's full charge.
   The charger doesn't report the main lead while idle; it checks the cell count against the main
   lead itself as the program starts, and the dashboard warns if the leads disagree while it runs.
+- **Lost-contact alarm:** if readings stop for more than 5 s while a program is running, or the
+  charger drops off USB mid-program, the charger's tab turns red ("No readings") and a loud alarm
+  sounds without a break, even with **Sound** off, until you press **Silence alarm**. It keeps
+  going after readings come back, so a lost-contact episode can't pass unnoticed. The charger may
+  still be charging with nothing watching it, so check its screen.
+  Replugging the USB lead mid-program has left a charger connected but silent; after 10 s with no
+  answer the dashboard drops the connection and reopens it, and the program carries on in the same
+  log file.
 - **Time left:** an estimate that learns from the programs it watches finish.
 - **Phone view:** the same dashboard on any phone on your WiFi, via the QR code.
 - **Logging and sound:** each program is saved to a CSV file (switch it off with **Logging**), and
