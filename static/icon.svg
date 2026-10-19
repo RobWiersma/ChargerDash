@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- ChargerDash icon: a charger's front, with a backlit LCD showing a bolt and cell bars -->
+  <rect width="256" height="256" rx="56" fill="#16181d"/>
+  <rect x="18" y="18" width="220" height="220" rx="44" fill="none" stroke="#c81e1e" stroke-width="8"/>
+  <rect x="40" y="46" width="176" height="104" rx="12" fill="#1d4ed8"/>
+  <rect x="52" y="58" width="152" height="80" rx="6" fill="#3b82f6"/>
+  <polygon points="98,64 70,106 88,106 80,134 112,92 94,92 104,64" fill="#fff"/>
+  <rect x="124" y="104" width="12" height="26" rx="3" fill="#fff"/>
+  <rect x="142" y="96" width="12" height="34" rx="3" fill="#fff"/>
+  <rect x="160" y="100" width="12" height="30" rx="3" fill="#fff"/>
+  <rect x="178" y="92" width="12" height="38" rx="3" fill="#fff"/>
+  <circle cx="64" cy="190" r="15" fill="#9ca3af"/>
+  <circle cx="106" cy="190" r="15" fill="#9ca3af"/>
+  <circle cx="150" cy="190" r="15" fill="#9ca3af"/>
+  <circle cx="192" cy="190" r="15" fill="#c81e1e"/>
+</svg>

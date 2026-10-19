@@ -40,7 +40,9 @@ def main():
 
     webview.create_window(TITLE, f"http://127.0.0.1:{port}/", width=1200, height=900, min_size=(400, 500))
     # Keep browser storage (the sound on/off choice) between runs.
-    webview.start(private_mode=False, storage_path=os.path.join(server.DATA_DIR, "webview"))
+    # The window icon: icon.ico when run from source; the exe's own icon (same picture) when built.
+    webview.start(private_mode=False, storage_path=os.path.join(server.DATA_DIR, "webview"),
+                  icon=os.path.join(server.HERE, "icon.ico"))
 
 
 if __name__ == "__main__":

@@ -92,6 +92,7 @@ NAMES_FILE = os.path.join(DATA_DIR, "chargers.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 DEFAULT_PREFS = {"battery": "lipo", "mode": "balance", "current_a": 1.0}
 INDEX_HTML = os.path.join(HERE, "static", "index.html")
+ICONS = {"/icon.svg": "image/svg+xml", "/icon-180.png": "image/png", "/favicon.ico": None}
 
 
 def u16(p, i):
@@ -1022,6 +1023,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html"):
             with open(INDEX_HTML, "rb") as f:
                 self._send(200, "text/html; charset=utf-8", f.read())
+        elif url.path in ICONS:
+            # Browsers ask for /favicon.ico regardless; answer with the SVG icon.
+            name = "icon.svg" if url.path == "/favicon.ico" else url.path[1:]
+            with open(os.path.join(HERE, "static", name), "rb") as f:
+                self._send(200, ICONS[url.path] or "image/svg+xml", f.read())
         elif url.path == "/api/state":
             # since=<id>:<n>,<id>:<n> -> only history samples after n for each charger
             since = {}
