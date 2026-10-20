@@ -141,6 +141,8 @@
     background: var(--surface); color: var(--ink); border: 1px solid var(--border);
   }
   .btn:hover:not(:disabled) { background: var(--grid); }
+  a.btn { text-decoration: none; }
+  .btn-update { border-color: var(--good); color: var(--good); }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn-primary { background: var(--s1); border-color: var(--s1); color: #fff; }
   .btn-primary:hover:not(:disabled) { background: var(--s1); filter: brightness(1.1); }
@@ -310,6 +312,8 @@
   <header>
     <h1>ChargerDash</h1>
     <span class="sub">for SkyRC iMAX B6AC v2</span>
+    <span class="sub" id="version"></span>
+    <a class="btn btn-update" id="update" hidden target="_blank" rel="noopener"></a>
     <span class="spacer"></span>
     <button id="phone" type="button" hidden aria-haspopup="dialog" title="Show a QR code to open this on your phone"></button>
     <button class="btn" id="logging" type="button" title="Save each charge to a CSV file"></button>
@@ -1274,7 +1278,7 @@ function renderTiles(c, s) {
   c.q(".t-a").innerHTML = s ? unit(s.current_a.toFixed(2), "A") : "–";
   c.q(".t-mah").innerHTML = run ? unit(s.mah, "mAh") : "–";
   c.q(".t-time").textContent = run ? fmtTime(s.secs) : "–";
-  c.q(".t-temp").innerHTML = run ? unit(s.temp_c, "°C") : "–";
+  c.q(".t-temp").innerHTML = s && s.temp_c != null ? unit(s.temp_c, "°C") : "–";
 }
 
 // The cell balance view: each cell as a dot on a shared scale around the pack average. Used by
@@ -1403,7 +1407,8 @@ async function tick() {
   try {
     const since = [...chargers.values()].map(c => `${c.id}:${c.next}`).join(",");
     const res = await fetch(`/api/state?since=${since}`);
-    const { chargers: list, logging, cutoff_ratios, finishes: learned, known } = await res.json();
+    const { chargers: list, logging, cutoff_ratios, finishes: learned, known, update } = await res.json();
+    renderUpdate(update);
     if (cutoff_ratios) cutoffRatios = cutoff_ratios;
     if (learned) finishes = learned;
     knownChargers = known || [];
@@ -1475,8 +1480,19 @@ $("logging").addEventListener("click", async () => {
   if (r.ok) renderLogging(r.logging);
 });
 
+// The server checks GitHub's latest release at start-up and every few hours.
+function renderUpdate(u) {
+  const a = $("update"), show = !!(u && u.newer);
+  a.hidden = !show;
+  if (!show) return;
+  a.href = u.url;
+  a.textContent = `⬆ Version ${u.latest} available`;
+  a.title = `You have ${u.current}. Open the release page to download ChargerDash ${u.latest}.`;
+}
+
 // Phone address and the logs-folder button only make sense on the PC running ChargerDash.
 fetch("/api/info").then(r => r.json()).then(info => {
+  if (info.version) $("version").textContent = `v${info.version}`;
   if (!info.local) return;
   if (info.phone_url) {
     $("phone").hidden = false;

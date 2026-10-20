@@ -72,6 +72,10 @@ in a LiPo bag.
   answer the dashboard drops the connection and reopens it, and the program carries on in the same
   log file.
 - **Time left:** an estimate that learns from the programs it watches finish.
+- **Update check:** the running version shows next to the title. At start-up and every 6 hours
+  the app asks GitHub for the latest release (that request is all it sends), and a **Version …
+  available** button links to the download when there's a newer one. Set
+  `CHARGERDASH_NO_UPDATE_CHECK=1` to turn it off.
 - **Phone view:** the same dashboard on any phone on your WiFi, via the QR code.
 - **Logging and sound:** each program is saved to a CSV file (switch it off with **Logging**), and
   a sound plays when a program finishes or stops with an error.
@@ -138,6 +142,10 @@ http://localhost:8765.
 
 **Build the exe:** run `build.bat`, which writes `dist\ChargerDash.exe` with PyInstaller.
 
+**Release:** set `VERSION` in `server.py`, build, then publish a GitHub release tagged
+`v<VERSION>` (for example `v1.3.1`) with `ChargerDash.exe` attached. The update check compares
+`VERSION` with the latest release's tag.
+
 ## Protocol notes (reverse-engineered, firmware 1.13)
 
 USB HID, VID `0x0000` PID `0x0001`. Send the 64-byte report `0F 03 55 00 55 FF FF 00…`.
@@ -150,7 +158,7 @@ The reply is `0F 22 55 00 …`, with big-endian u16 values:
 | 7–8 | elapsed seconds |
 | 9–10 | pack mV, read on the main lead |
 | 11–12 | current mA |
-| 13–14 | internal temp °C (likely) |
+| 13–14 | internal temp °C (likely); live only while running, leftovers otherwise (2047 seen after an error) |
 | 17–28 | cells 1–6, mV |
 | 35 | checksum = sum(bytes 2..34) & 0xFF |
 

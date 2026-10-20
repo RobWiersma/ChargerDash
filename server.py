@@ -22,6 +22,7 @@ import time
 import traceback
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.request
 from urllib.parse import parse_qs, urlparse
 
 import hid
@@ -98,6 +99,14 @@ DEFAULT_PREFS = {"battery": "lipo", "mode": "balance", "current_a": 1.0}
 INDEX_HTML = os.path.join(HERE, "static", "index.html")
 ICONS = {"/icon.svg": "image/svg+xml", "/icon-180.png": "image/png", "/favicon.ico": None}
 
+# Bump before tagging a release; the GitHub release tag should be v<VERSION>.
+VERSION = "1.4"
+RELEASES_API = "https://api.github.com/repos/RobWiersma/ChargerDash/releases/latest"
+RELEASES_PAGE = "https://github.com/RobWiersma/ChargerDash/releases/latest"
+UPDATE_CHECK_SECS = 6 * 3600
+# Filled in by update_checker(); "latest" stays None until GitHub has answered once.
+update_info = {"current": VERSION, "latest": None, "url": RELEASES_PAGE, "newer": False}
+
 
 def u16(p, i):
     return (p[i] << 8) | p[i + 1]
@@ -136,8 +145,11 @@ def decode(p):
             "mah": None if error else u16(p, 5),
             "secs": u16(p, 7),
             "pack_v": u16(p, 9) / 1000,
-            "current_a": u16(p, 11) / 1000,
-            "temp_c": u16(p, 13),
+            # Also leftover once the program has ended (0.526 A was seen after "DC input too low").
+            "current_a": u16(p, 11) / 1000 if mode == 1 else 0.0,
+            # Live only while running: finished or errored replies carry leftovers (2047 °C was seen
+            # after "DC input too low"), and there's no other temperature reading to fall back on.
+            "temp_c": u16(p, 13) if mode == 1 else None,
             "cells_v": [u16(p, 17 + 2 * i) / 1000 for i in range(6)],
         }
     return {
@@ -941,7 +953,7 @@ class Fleet:
             chargers = sorted(self.chargers.values(), key=lambda c: c.name.lower())
             finishes = [f for f in self._app().get("finishes", []) if "tail_secs" in f]
             known = [{"id": k, "name": self.names[k]} for k in self._known_disconnected()]
-        return {"logging": self.logging, "cutoff_ratios": self.cutoff_ratios(), "finishes": finishes,
+        return {"logging": self.logging, "update": update_info, "cutoff_ratios": self.cutoff_ratios(), "finishes": finishes,
                 "known": sorted(known, key=lambda k: k["name"].lower()),
                 "chargers": [c.snapshot(since.get(c.id, 0)) for c in chargers]}
 
@@ -1067,7 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
                     since[cid] = int(n)
             self._json(fleet.snapshot(since))
         elif url.path == "/api/info":
-            self._json({"local": self._is_local(), "phone_url": self._phone_url(),
+            self._json({"local": self._is_local(), "phone_url": self._phone_url(), "version": VERSION,
                         "data_dir": DATA_DIR if self._is_local() else None})
         elif url.path == "/api/phone-qr.svg" and self._is_local() and self._phone_url():
             # The phone address as a QR code, so a phone's camera can open it. Black on white
@@ -1163,9 +1175,40 @@ def lan_ip():
             return "127.0.0.1"
 
 
+def parse_version(s):
+    """'v1.3.1' -> (1, 3, 1); None if there are no numbers in it."""
+    nums = re.findall(r"\d+", s or "")
+    return tuple(int(n) for n in nums[:3]) if nums else None
+
+
+def check_for_update():
+    """Ask GitHub for the latest published release (drafts and pre-releases are skipped by the API).
+    Sends nothing but the request itself; failures (offline, rate limit) are ignored until next time."""
+    try:
+        req = urllib.request.Request(RELEASES_API, headers={
+            "Accept": "application/vnd.github+json", "User-Agent": f"ChargerDash/{VERSION}"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            rel = json.load(r)
+    except (OSError, ValueError):
+        return
+    tag = rel.get("tag_name") or ""
+    latest = parse_version(tag)
+    if latest:
+        update_info.update(latest=tag.lstrip("vV"), url=rel.get("html_url") or RELEASES_PAGE,
+                           newer=latest > parse_version(VERSION))
+
+
+def update_checker():
+    while True:
+        check_for_update()
+        time.sleep(UPDATE_CHECK_SECS)
+
+
 def start_server(host="0.0.0.0", port=8765):
     """Start charger scanning and the web server on background threads. Returns the server."""
     threading.Thread(target=fleet.scan_forever, daemon=True).start()
+    if not os.environ.get("CHARGERDASH_NO_UPDATE_CHECK"):
+        threading.Thread(target=update_checker, daemon=True).start()
     server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
