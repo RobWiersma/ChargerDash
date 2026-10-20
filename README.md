@@ -101,6 +101,30 @@ Not tested yet: **1S** and **5S** packs, LiIon on chargers with machine id 10013
 for LiIon), and any charger other than the B6AC v2. Use these with extra care, and please report
 how they go.
 
+### Overcharge seen after replugging USB mid-charge
+
+On 2026-10-19 a 4S LiPo charge on one charger ended with the pack overcharged. The USB lead had been unplugged and plugged back in while the
+charge was running. The pack was discharged straight away.
+
+What the readings show: the program started at 3.85 V per cell, and after one reading the charger
+stopped answering over USB for about 25 minutes while it stayed connected. The dashboard (before
+the lost-contact alarm existed) kept showing that first reading as if it were live, so nothing
+recorded the overcharge itself. When the charger next answered it reported the program as finished
+after 1 second with 0 mAh, which doesn't match a 25-minute charge, and it reported the program as
+an unrecognised mode ("Program 1") rather than Storage or Balance charge.
+
+The cause isn't proven, and it is not necessarily the dashboard. ChargerDash only sends the
+charger the same standard commands SkyRC ChargeMaster uses: read-only status queries every second,
+and Start or Stop only when you press those buttons. A LiPo Start asks for a 4.20 V per-cell
+maximum. The charger runs the program and enforces the voltage limits in its own firmware; the
+dashboard can't push a pack past them, and it sends nothing but status queries unless Start or Stop is pressed. The likeliest
+explanation is that replugging USB mid-program left the charger's firmware in a bad state, though
+that can't be confirmed from the data.
+
+So: **don't unplug or replug the USB lead while a program is running**, and keep an eye on the
+charger's own screen. The lost-contact alarm (see [Features](#features)) now sounds if this
+happens again.
+
 ## Run from source or build
 
 ```bash
