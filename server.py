@@ -100,7 +100,7 @@ INDEX_HTML = os.path.join(HERE, "static", "index.html")
 ICONS = {"/icon.svg": "image/svg+xml", "/icon-180.png": "image/png", "/favicon.ico": None}
 
 # Bump before tagging a release; the GitHub release tag should be v<VERSION>.
-VERSION = "1.4"
+VERSION = "1.5"
 RELEASES_API = "https://api.github.com/repos/RobWiersma/ChargerDash/releases/latest"
 RELEASES_PAGE = "https://github.com/RobWiersma/ChargerDash/releases/latest"
 UPDATE_CHECK_SECS = 6 * 3600
