@@ -77,6 +77,12 @@ in a LiPo bag.
   available** button links to the download when there's a newer one. Set
   `CHARGERDASH_NO_UPDATE_CHECK=1` to turn it off.
 - **Phone view:** the same dashboard on any phone on your WiFi, via the QR code.
+- **Phone alerts:** a push notification through the free [ntfy](https://ntfy.sh) app when a
+  program finishes (with mAh, time and internal resistance), stops with an error, or loses
+  contact mid-charge (sent as urgent). It works wherever the phone has internet. Click **Alerts**
+  on the PC running ChargerDash, subscribe to the suggested topic in the ntfy app, and press
+  **Send test**. Alerts are posted to ntfy.sh, and only while they're on. Anyone who knows the
+  topic can read it, so the topic is random and is only shown on that PC.
 - **Logging and sound:** each program is saved to a CSV file (switch it off with **Logging**), and
   a sound plays when a program finishes or stops with an error.
 

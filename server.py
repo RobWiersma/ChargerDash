@@ -104,6 +104,11 @@ VERSION = "1.4"
 RELEASES_API = "https://api.github.com/repos/RobWiersma/ChargerDash/releases/latest"
 RELEASES_PAGE = "https://github.com/RobWiersma/ChargerDash/releases/latest"
 UPDATE_CHECK_SECS = 6 * 3600
+# Phone alerts go through ntfy: the user subscribes to a topic in the ntfy app, and anyone who knows
+# the topic can read or post to it, so it's a random name, shown only on this PC.
+NTFY_SERVER = "https://ntfy.sh"
+NTFY_TOPIC_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+NTFY_PRIORITIES = {"default": 3, "high": 4, "urgent": 5}
 # Filled in by update_checker(); "latest" stays None until GitHub has answered once.
 update_info = {"current": VERSION, "latest": None, "url": RELEASES_PAGE, "newer": False}
 
@@ -659,12 +664,30 @@ class Charger:
                     self._log_file.flush()
             elif prev and prev["running"]:
                 self._close_log()  # program finished or stopped
+                self._alert_end(prev, s)
                 if s["done"] and prev.get("program") and self.peak_a > 0.2:
                     # Learn how this charger actually ends a program, for the time-left estimate.
                     tail = sorted(r["current_a"] for r in self.history[-10:])
                     fleet.record_finish(prev["program"], tail[len(tail) // 2], self.peak_a,
                                         **taper_profile(self.history, self.peak_a, prev["secs"]))
             self.latest = s
+
+    def _alert_end(self, prev, s):
+        """Phone alert for a program that finished or stopped with an error. Caller holds self.lock.
+        A program stopped by hand (Stop here or on the charger) goes back to idle and isn't alerted."""
+        p = prev.get("program")
+        what = f"{p['type']} {p['mode'].lower()} {p['cells']}S" if p else "Program"
+        secs = s["secs"] or prev["secs"] or 0
+        took = f"{secs // 3600}h {secs // 60 % 60:02d}m" if secs >= 3600 else f"{secs // 60} min"
+        if s["done"]:
+            lines = [f"{what} done in {took}, {s['mah']} mAh in."]
+            if self.ir and self.ir.get("cells_mohm"):
+                cells = " / ".join(f"{r:.1f}" for r in self.ir["cells_mohm"])
+                lines.append(f"IR {cells} mΩ (pack {self.ir['pack_mohm']:.1f} mΩ)")
+            fleet.notify(f"{self.name}: charge done", "\n".join(lines), tags="white_check_mark")
+        elif s["error"]:
+            fleet.notify(f"{self.name}: stopped with an error",
+                         f"{what} stopped after {took}: {s['error']}.", priority="high", tags="warning")
 
     def set_logging(self, on):
         with self.lock:
@@ -875,6 +898,11 @@ class Fleet:
                 c.last_seen = round(time.time())
                 c._close_log()
                 cells = c.latest["cells_v"] if c.latest else None
+                if c.latest and c.latest["running"]:
+                    self.notify(f"{c.name}: lost contact while charging",
+                                "The charger dropped off USB or stopped answering, and may still be "
+                                "charging with nothing watching it. Check it now.",
+                                priority="urgent", tags="rotating_light")
             with self.lock:
                 # Remember the pack it had, to recognise this charger when it's plugged back in.
                 self._app().setdefault("last_cells", {})[c.id] = cells or []
@@ -1024,6 +1052,29 @@ class Fleet:
         for c in chargers:
             c.set_logging(on)
 
+    # ----- phone alerts -----
+
+    def ntfy_topic(self):
+        # No lock: callers already hold a charger's lock, and reading one key is atomic.
+        app = self.settings.get("app")
+        return (app.get("ntfy_topic") if isinstance(app, dict) else None) or ""
+
+    def set_ntfy_topic(self, topic):
+        """Set the ntfy topic alerts go to; "" turns alerts off. Returns False if it isn't valid."""
+        topic = topic.strip()
+        if topic and not NTFY_TOPIC_RE.fullmatch(topic):
+            return False
+        with self.lock:
+            self._app()["ntfy_topic"] = topic
+            save_json(SETTINGS_FILE, self.settings)
+        return True
+
+    def notify(self, title, message, priority="default", tags=""):
+        """Send a phone alert in the background, if alerts are on. Never blocks a charger's thread."""
+        topic = self.ntfy_topic()
+        if topic:
+            threading.Thread(target=send_ntfy, args=(topic, title, message, priority, tags), daemon=True).start()
+
     def get(self, cid):
         with self.lock:
             return self.chargers.get(cid)
@@ -1080,7 +1131,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(fleet.snapshot(since))
         elif url.path == "/api/info":
             self._json({"local": self._is_local(), "phone_url": self._phone_url(), "version": VERSION,
-                        "data_dir": DATA_DIR if self._is_local() else None})
+                        "data_dir": DATA_DIR if self._is_local() else None,
+                        "ntfy_topic": fleet.ntfy_topic() if self._is_local() else None})
         elif url.path == "/api/phone-qr.svg" and self._is_local() and self._phone_url():
             # The phone address as a QR code, so a phone's camera can open it. Black on white
             # whatever the theme: that's what phone cameras read most reliably.
@@ -1115,6 +1167,25 @@ class Handler(BaseHTTPRequestHandler):
             os.makedirs(LOG_DIR, exist_ok=True)
             os.startfile(LOG_DIR)
             return self._json({"ok": True})
+        if path in ("/api/alerts", "/api/alerts/test"):
+            # Only from this PC: the topic is the only thing keeping the alerts private.
+            if not self._is_local():
+                return self._json({"ok": False}, 403)
+            try:
+                topic = str(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))["topic"]).strip()
+            except (ValueError, KeyError, TypeError):
+                return self._json({"ok": False, "message": "Bad request."}, 400)
+            if topic and not NTFY_TOPIC_RE.fullmatch(topic):
+                return self._json({"ok": False, "message": "Use only letters, numbers, - and _ (up to 64)."}, 400)
+            if path == "/api/alerts":
+                fleet.set_ntfy_topic(topic)
+                return self._json({"ok": True, "topic": topic,
+                                   "message": "Saved." if topic else "Phone alerts are off."})
+            if not topic:
+                return self._json({"ok": False, "message": "Enter a topic first."}, 400)
+            ok, err = send_ntfy(topic, "ChargerDash test", "Phone alerts are working.", tags="tada")
+            return self._json({"ok": ok, "message": "Sent. Check your phone." if ok else f"Couldn't send: {err}"},
+                              200 if ok else 502)
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             cid = str(body["id"])
@@ -1164,6 +1235,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
+
+
+def send_ntfy(topic, title, message, priority="default", tags=""):
+    """Post one alert to the ntfy topic. Returns (ok, error message)."""
+    # Published as JSON, not with headers, so names and units outside Latin-1 (mΩ) come through.
+    body = {"topic": topic, "title": title, "message": message,
+            "priority": NTFY_PRIORITIES[priority], "tags": [tags] if tags else []}
+    req = urllib.request.Request(NTFY_SERVER, data=json.dumps(body).encode(), headers={
+        "Content-Type": "application/json", "User-Agent": f"ChargerDash/{VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            return True, None
+    except OSError as e:
+        print(f"Phone alert not sent: {e}", flush=True)
+        return False, str(getattr(e, "reason", e))
 
 
 def lan_ip():

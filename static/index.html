@@ -190,6 +190,25 @@
   #qr img { width: 240px; height: 240px; max-width: 100%; border-radius: 8px; display: block; margin: 0 auto; }
   #qr .url { font-weight: 600; margin: 12px 0 4px; user-select: all; }
   #qr p { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
+  /* Phone alerts (ntfy) */
+  #alerts {
+    width: min(440px, calc(100vw - 32px)); padding: 20px;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.35);
+  }
+  #alerts::backdrop { background: rgba(0,0,0,.5); }
+  #alerts h2 { margin: 0 0 10px; font-size: 17px; }
+  #alerts p, #alerts ol { font-size: 13px; color: var(--ink-2); margin: 0 0 12px; }
+  #alerts ol { padding-left: 20px; }
+  #alerts li { margin-bottom: 4px; }
+  #alerts b { color: var(--ink); }
+  #alerts input {
+    width: 100%; box-sizing: border-box; margin-bottom: 12px; font: inherit; font-size: 15px; font-weight: 600;
+    color: var(--ink); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  }
+  #alerts .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #alerts .actions .spacer { flex: 1; }
+  #alerts .msg { font-size: 13px; margin: 10px 0 0; min-height: 1.2em; }
   .help-head {
     position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -319,6 +338,7 @@
     <button class="btn" id="logging" type="button" title="Save each charge to a CSV file"></button>
     <button class="btn" id="logs" type="button" hidden>Logs folder</button>
     <button class="btn" id="sound" type="button" title="Play a sound when a program finishes or stops with an error"></button>
+    <button class="btn" id="alerts-btn" type="button" hidden aria-haspopup="dialog" title="Get a notification on your phone when a charge is done"></button>
     <button class="btn" id="help-btn" type="button" aria-haspopup="dialog">❔ Help</button>
   </header>
 
@@ -328,6 +348,26 @@
     <div class="url"></div>
     <p>Phone on the same WiFi as this PC: point its camera at the code.</p>
     <button class="btn" type="button" id="qr-close">Close</button>
+  </dialog>
+
+  <dialog id="alerts" aria-labelledby="alerts-title">
+    <h2 id="alerts-title">Phone alerts</h2>
+    <p>Get a notification when a charge is done, when a program stops with an error, and when a charger loses
+      contact mid-charge. It works anywhere your phone has internet, not just on this WiFi.</p>
+    <ol>
+      <li>Install the free <b>ntfy</b> app (Google Play, F-Droid or the App Store).</li>
+      <li>In the app, tap <b>+</b> and subscribe to this topic:</li>
+    </ol>
+    <input id="alerts-topic" type="text" spellcheck="false" autocomplete="off" maxlength="64" aria-label="ntfy topic">
+    <p>Anyone who knows the topic can see these alerts, so keep it hard to guess. ChargerDash keeps it on this PC only.</p>
+    <div class="actions">
+      <button class="btn btn-primary" type="button" id="alerts-save">Save</button>
+      <button class="btn" type="button" id="alerts-test">Send test</button>
+      <button class="btn" type="button" id="alerts-off">Turn off</button>
+      <span class="spacer"></span>
+      <button class="btn" type="button" id="alerts-close">Close</button>
+    </div>
+    <p class="msg" id="alerts-msg" role="status"></p>
   </dialog>
 
   <dialog id="help" aria-labelledby="help-title">
@@ -412,6 +452,9 @@
           <li><b>Phone</b>: click the 📱 address in the header for a QR code, and scan it with a phone on the same
             Wi-Fi (or type the address). If Windows Firewall
             asks, allow private networks.</li>
+          <li><b>Alerts</b> sends a notification to your phone through the free ntfy app when a program finishes,
+            stops with an error, or loses contact mid-charge. Set it up from the button on this PC; it then
+            works wherever your phone has internet.</li>
           <li><b>Sound</b> plays a chime when a program finishes and a warning tone if it stops with an error. Keep the
             app open (minimised is fine) while charging.</li>
           <li>If readings stop while a program is running, or the charger drops off USB, a loud alarm repeats even with
@@ -1507,7 +1550,50 @@ fetch("/api/info").then(r => r.json()).then(info => {
   $("logs").hidden = false;
   $("logs").title = `Open ${info.data_dir}\\logs`;
   $("logs").addEventListener("click", () => post("/api/open-logs", {}));
+  renderAlerts(info.ntfy_topic || "");
+  $("alerts-btn").hidden = false;
 }).catch(() => {});
+
+// Phone alerts: the server posts to an ntfy topic the phone subscribes to. Set up from this PC only,
+// since the topic is what keeps the alerts private.
+let alertsTopic = "";
+function renderAlerts(topic) {
+  alertsTopic = topic;
+  $("alerts-btn").textContent = topic ? "🔔 Alerts on" : "🔕 Alerts off";
+  $("alerts-btn").setAttribute("aria-pressed", !!topic);
+}
+function alertsMessage(r) {
+  $("alerts-msg").textContent = r.message || "";
+  $("alerts-msg").className = "msg " + (r.ok ? "ok" : "bad");
+}
+function randomTopic() {
+  const abc = "abcdefghijkmnpqrstuvwxyz23456789", bytes = crypto.getRandomValues(new Uint8Array(10));
+  return "chargerdash-" + [...bytes].map(b => abc[b % abc.length]).join("");
+}
+async function saveAlerts(topic) {
+  const r = await post("/api/alerts", { topic });
+  if (r.ok) renderAlerts(r.topic);
+  alertsMessage(r);
+  return r.ok;
+}
+$("alerts-btn").addEventListener("click", () => {
+  $("alerts-topic").value = alertsTopic || randomTopic();
+  $("alerts-msg").textContent = "";
+  $("alerts").showModal();
+});
+$("alerts-save").addEventListener("click", () => saveAlerts($("alerts-topic").value));
+$("alerts-test").addEventListener("click", async () => {
+  // Save first, so the test goes to the topic that alerts will use.
+  if (!await saveAlerts($("alerts-topic").value)) return;
+  $("alerts-msg").textContent = "Sending…";
+  $("alerts-msg").className = "msg";
+  alertsMessage(await post("/api/alerts/test", { topic: alertsTopic }));
+});
+$("alerts-off").addEventListener("click", async () => {
+  if (await saveAlerts("")) $("alerts-topic").value = randomTopic();
+});
+$("alerts-close").addEventListener("click", () => $("alerts").close());
+$("alerts").addEventListener("click", ev => { if (ev.target === $("alerts")) $("alerts").close(); });
 
 tick();
 setInterval(tick, 1000);
